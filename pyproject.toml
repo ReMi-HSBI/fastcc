@@ -56,6 +56,12 @@ Issues = "https://github.com/ReMi-HSBI/fastcc/issues"
 ########################################################################
 ###############################  TOOLS  ################################
 ########################################################################
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"fastcc" = ["py.typed"]
+
 [tool.ruff]
 src = ["src"]
 cache-dir = ".cache/ruff"
