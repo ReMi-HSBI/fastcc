@@ -70,7 +70,7 @@ def bytes_to_packet(payload: bytes, packet_type: type[Packet]) -> Packet:
         return int.from_bytes(payload)
 
     if issubclass(packet_type, float):
-        return struct.unpack("f", payload)[0]
+        return struct.unpack("f", payload)[0]  # type: ignore [no-any-return]
 
     if issubclass(packet_type, Message):
         message = packet_type()

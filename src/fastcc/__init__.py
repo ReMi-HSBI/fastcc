@@ -26,6 +26,9 @@ if typing.TYPE_CHECKING:
     from fastcc.utilities.type_aliases import Routable
 
 import aiomqtt
+from google.protobuf.message import Message
+from paho.mqtt.packettypes import PacketTypes
+from paho.mqtt.properties import Properties
 
 from fastcc.utilities import interpretation
 from fastcc.utilities.mqtt import QoS
@@ -115,7 +118,7 @@ class FastCC:
     """
 
     def __init__(self, client: aiomqtt.Client) -> None:
-        if client._client.protocol != aiomqtt.ProtocolVersion.V5:  # noqa: SLF001
+        if client._client.protocol != aiomqtt.ProtocolVersion.V5.value:  # noqa: SLF001
             details = "client must support MQTT version 5.0"
             _logger.error(details)
             raise ValueError(details)
@@ -166,7 +169,7 @@ class FastCC:
         async for message in self._client.messages:
             await self.__handle(message)
 
-    async def __handle(self, message: aiomqtt.Message) -> None:
+    async def __handle(self, message: aiomqtt.Message) -> None:  # noqa: C901
         if not isinstance(message.payload, bytes):
             details = (
                 f"message type was expected to be bytes but was "
@@ -198,4 +201,23 @@ class FastCC:
                 )
                 kwargs[packet_parameter.name] = packet
 
-            await callback(**kwargs)
+            response = None
+            properties = Properties(PacketTypes.PUBLISH)  # type: ignore [no-untyped-call]
+            try:
+                response = await callback(**kwargs)
+            except Exception as error:
+                _logger.exception("error while handling message")
+                properties.UserProperty = [("error", error.__class__.__name__)]
+
+            response_topic = getattr(message.properties, "ResponseTopic", None)
+
+            if response_topic is not None:
+                if isinstance(response, Message):
+                    response = response.SerializeToString()
+
+                await self._client.publish(
+                    response_topic,
+                    response,
+                    qos=message.qos,
+                    properties=properties,
+                )
