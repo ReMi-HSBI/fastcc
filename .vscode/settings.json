@@ -1,0 +1,17 @@
+{
+  "markdownlint.config": {
+    "default": true,
+    "MD033": false,
+    "MD041": false
+  },
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff"
+  },
+  "ruff.nativeServer": true,
+  "ruff.configuration": "pyproject.toml",
+  "mypy-type-checker.importStrategy": "fromEnvironment",
+  "mypy-type-checker.reportingScope": "workspace",
+  "mypy-type-checker.args": [
+    "--config-file=pyproject.toml"
+  ]
+}
