@@ -136,7 +136,7 @@ class FastCC:
                 _logger.info("Subscribing to topic %s (QoS %d)", topic, qos)
                 await self._client.subscribe(topic, qos)
 
-        _logger.info("Hello, FastCC!")
+        await self.__listen()
 
     def add_router(self, router: CCRouter) -> None:
         """Add a router to the app.
@@ -147,3 +147,25 @@ class FastCC:
             Router to add.
         """
         self._router.add_router(router)
+
+    async def __listen(self) -> None:
+        async for message in self._client.messages:
+            await self.__handle(message)
+
+    async def __handle(self, message: aiomqtt.Message) -> None:
+        if not isinstance(message.payload, bytes):
+            details = (
+                f"message type was expected to be bytes but was "
+                f"{type(message.payload)}"
+            )
+            _logger.error(details)
+            raise TypeError(details)
+
+        if (routings := self._router.routes.get(message.topic.value)) is None:
+            return
+
+        if (callbacks := routings.get(QoS(message.qos))) is None:
+            return
+
+        for callback in callbacks:
+            await callback()
