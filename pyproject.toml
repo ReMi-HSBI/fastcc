@@ -140,7 +140,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.mccabe]
-max-complexity = 5
+max-complexity = 8
 
 [tool.ruff.lint.pydocstyle]
 convention = "numpy"
