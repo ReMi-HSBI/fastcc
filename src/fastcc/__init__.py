@@ -16,6 +16,7 @@ References
 
 from __future__ import annotations
 
+import inspect
 import logging
 import typing
 
@@ -26,7 +27,9 @@ if typing.TYPE_CHECKING:
 
 import aiomqtt
 
+from fastcc.utilities import interpretation
 from fastcc.utilities.mqtt import QoS
+from fastcc.utilities.validation import validate_route
 
 __all__ = ["CCRouter", "FastCC"]
 
@@ -72,6 +75,8 @@ class CCRouter:
         """
 
         def decorator(routable: Routable) -> Routable:
+            validate_route(routable)
+
             if topic not in self._routes:
                 self._routes[topic] = {}
 
@@ -117,6 +122,7 @@ class FastCC:
 
         self._client = client
         self._router = CCRouter()
+        self._injectors: dict[str, typing.Any] = {}
 
     async def run(self) -> None:
         """Start the application.
@@ -148,6 +154,14 @@ class FastCC:
         """
         self._router.add_router(router)
 
+    def add_injector(self, **kwargs: typing.Any) -> None:  # noqa: ANN401
+        """Add injector variables to the app.
+
+        Injector variables are passed to the routables as keyword
+        arguments if they are present (by name!).
+        """
+        self._injectors.update(kwargs)
+
     async def __listen(self) -> None:
         async for message in self._client.messages:
             await self.__handle(message)
@@ -168,4 +182,20 @@ class FastCC:
             return
 
         for callback in callbacks:
-            await callback()
+            signature = inspect.signature(callback, eval_str=True)
+
+            kwargs = {
+                key: value
+                for key, value in self._injectors.items()
+                if key in signature.parameters
+            }
+
+            packet_parameter = interpretation.get_packet_parameter(callback)
+            if packet_parameter is not None:
+                packet = interpretation.bytes_to_packet(
+                    message.payload,
+                    packet_parameter.annotation,
+                )
+                kwargs[packet_parameter.name] = packet
+
+            await callback(**kwargs)
