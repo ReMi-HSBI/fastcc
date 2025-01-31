@@ -1,4 +1,4 @@
-Welcome to FastCI's documentation!
+Welcome to FastCC's documentation!
 ==================================
 
 .. autosummary::
