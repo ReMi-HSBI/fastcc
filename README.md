@@ -41,10 +41,9 @@ import os
 import sys
 import typing
 
-import aiomqtt
 import fastcc
 
-router = fastcc.CCRouter()
+router = fastcc.Router()
 
 
 @router.route("example")
@@ -57,11 +56,8 @@ async def example(name: str, *, database: dict[str, typing.Any]) -> str:
 async def main() -> None:
     logging.basicConfig(level=logging.INFO)
 
-    database = {}
-    mqtt_client = aiomqtt.Client(
-        "test.mosquitto.org",
-        protocol=aiomqtt.ProtocolVersion.V5,
-    )
+    database: dict[str, typing.Any] = {}
+    mqtt_client = fastcc.Client("test.mosquitto.org")
     app = fastcc.FastCC(mqtt_client)
     app.add_router(router)
     app.add_injector(database=database)
