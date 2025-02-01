@@ -45,7 +45,7 @@ def get_packet_parameter(routable: Routable) -> inspect.Parameter | None:
     return p0
 
 
-def bytes_to_packet(payload: bytes, packet_type: type[Packet]) -> Packet:
+def bytes_to_packet[T: Packet](payload: bytes, packet_type: type[T]) -> T:
     """Convert bytes to a packet.
 
     Parameters
@@ -61,13 +61,13 @@ def bytes_to_packet(payload: bytes, packet_type: type[Packet]) -> Packet:
         Converted packet.
     """
     if issubclass(packet_type, bytes):
-        return payload
+        return payload  # type: ignore [return-value]
 
     if issubclass(packet_type, str):
-        return payload.decode()
+        return payload.decode()  # type: ignore [return-value]
 
     if issubclass(packet_type, int):
-        return int.from_bytes(payload)
+        return int.from_bytes(payload)  # type: ignore [return-value]
 
     if issubclass(packet_type, float):
         return struct.unpack("f", payload)[0]  # type: ignore [no-any-return]
@@ -75,7 +75,7 @@ def bytes_to_packet(payload: bytes, packet_type: type[Packet]) -> Packet:
     if issubclass(packet_type, Message):
         message = packet_type()
         message.ParseFromString(payload)
-        return message
+        return message  # type: ignore [return-value]
 
     details = f"packet type {packet_type} is not supported"
     raise NotImplementedError(details)

@@ -138,6 +138,7 @@ ignore = [
     "D105",     # undocumented-magic-method (https://docs.astral.sh/ruff/rules/undocumented-magic-method)
     "TRY400",   # error-instead-of-exception (https://docs.astral.sh/ruff/rules/error-instead-of-exception)
     "COM812",   # missing-trailing-comma (https://docs.astral.sh/ruff/rules/missing-trailing-comma)
+    "ASYNC109", # async-function-with-timeout (https://docs.astral.sh/ruff/rules/async-function-with-timeout)
 ]
 
 [tool.ruff.lint.extend-per-file-ignores]

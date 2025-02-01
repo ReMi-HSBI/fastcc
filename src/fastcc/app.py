@@ -86,11 +86,11 @@ class FastCC:
     async def __handle(self, message: aiomqtt.Message) -> None:  # noqa: C901
         if not isinstance(message.payload, bytes):
             details = (
-                f"message type was expected to be bytes but was "
+                f"message payload has unimplemented type "
                 f"{type(message.payload)}"
             )
             _logger.error(details)
-            raise TypeError(details)
+            raise NotImplementedError(details)
 
         if (routings := self._router.routes.get(message.topic.value)) is None:
             return

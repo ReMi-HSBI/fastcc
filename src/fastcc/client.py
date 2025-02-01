@@ -17,7 +17,6 @@ from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 from paho.mqtt.subscribeoptions import SubscribeOptions
 
-from fastcc.utilities.constants import MQTT_RESPONSE_TIMEOUT
 from fastcc.utilities.interpretation import bytes_to_packet
 from fastcc.utilities.mqtt import QoS
 
@@ -36,14 +35,15 @@ class Client(aiomqtt.Client):
 
         super().__init__(*args, **kwargs)
 
-    async def publish(  # type: ignore [override]
+    async def publish(  # type: ignore [override]  # noqa: PLR0913
         self,
         topic: str,
-        message: Packet | None = None,
+        packet: Packet | None = None,
         *,
         qos: QoS = QoS.AT_MOST_ONCE,
         retain: bool = False,
         properties: Properties | None = None,
+        timeout: float | None = None,
     ) -> None:
         """Publish a message to the MQTT broker.
 
@@ -51,19 +51,50 @@ class Client(aiomqtt.Client):
         ----------
         topic
             Topic to publish the message to.
-        message
-            Message to publish.
+        packet
+            Packet to publish.
+            `None` will publish an empty packet.
         qos
             Quality of service level.
         retain
-            Whether to retain the message.
+            Whether to retain the packet.
         properties
-            Properties to include with the message.
-        """
-        if isinstance(message, Message):
-            message = message.SerializeToString()
+            Properties to include with the packet.
+        timeout
+            Time to wait for the publication to finish in seconds.
+            `None` will wait indefinitely.
 
-        await super().publish(topic, message, qos.value, retain, properties)
+        Raises
+        ------
+        ConnectionError
+            If the publication fails.
+        TimeoutError
+            If the publication times out.
+        """
+        # `aiomqtt` uses `math.inf` instead of `None` to wait indefinitely.
+        if timeout is None:
+            timeout = math.inf
+
+        if isinstance(packet, Message):
+            packet = packet.SerializeToString()
+
+        try:
+            await super().publish(
+                topic,
+                packet,
+                qos.value,
+                retain,
+                properties,
+                timeout=timeout,
+            )
+        except aiomqtt.MqttCodeError as e:
+            details = str(e)
+            _logger.error(details)
+            raise ConnectionError(details) from None
+        except aiomqtt.MqttError as e:
+            details = str(e)
+            _logger.error(details)
+            raise TimeoutError(details) from None
 
     async def subscribe(  # type: ignore [override]
         self,
@@ -71,6 +102,7 @@ class Client(aiomqtt.Client):
         *,
         qos: QoS = QoS.AT_MOST_ONCE,
         properties: Properties | None = None,
+        timeout: float | None = None,
     ) -> None:
         """Subscribe to a topic on the MQTT broker.
 
@@ -82,18 +114,42 @@ class Client(aiomqtt.Client):
             Quality of service level.
         properties
             Properties to include with the subscription.
-        """
-        await super().subscribe(
-            topic,
-            options=SubscribeOptions(qos=qos.value),
-            properties=properties,
-        )
+        timeout
+            Time to wait for the subscription to finish in seconds.
+            `None` will wait indefinitely.
 
-    async def request(  # noqa: PLR0913
+        Raises
+        ------
+        ConnectionError
+            If the subscription fails.
+        TimeoutError
+            If the subscription times out.
+        """
+        # `aiomqtt` uses `math.inf` instead of `None` to wait indefinitely.
+        if timeout is None:
+            timeout = math.inf
+
+        try:
+            await super().subscribe(
+                topic,
+                options=SubscribeOptions(qos=qos.value),
+                properties=properties,
+                timeout=timeout,
+            )
+        except aiomqtt.MqttCodeError as e:
+            details = str(e)
+            _logger.error(details)
+            raise ConnectionError(details) from None
+        except aiomqtt.MqttError as e:
+            details = str(e)
+            _logger.error(details)
+            raise TimeoutError(details) from None
+
+    async def request[T: Packet](  # noqa: PLR0913
         self,
         topic: str,
-        message: Packet | None,
-        response_type: type[Packet],
+        packet: Packet | None,
+        response_type: type[T],
         *,
         qos: QoS = QoS.EXACTLY_ONCE,
         retain: bool = False,
@@ -101,18 +157,18 @@ class Client(aiomqtt.Client):
         sub_timeout: float | None = None,
         pub_properties: Properties | None = None,
         pub_timeout: float | None = None,
-        response_timeout: float = MQTT_RESPONSE_TIMEOUT,
-    ) -> Packet:
+        response_timeout: float | None = None,
+    ) -> T:
         """Send a request to the MQTT broker.
 
         Parameters
         ----------
         topic
             Topic to publish the request to.
-        message
-            Message to send with the request.
+        packet
+            Packet to send with the request.
         response_type
-            Type of the response message.
+            Type of the response packet.
         qos
             Quality of service level.
         retain
@@ -120,13 +176,16 @@ class Client(aiomqtt.Client):
         sub_properties
             Properties for the subscription.
         sub_timeout
-            Time to wait for the subscription in seconds.
+            Time to wait for the subscription to finish in seconds.
+            `None` will wait indefinitely.
         pub_properties
             Properties for the publication.
         pub_timeout
-            Time to wait for the publication in seconds.
+            Time to wait for the publication to finish in seconds.
+            `None` will wait indefinitely.
         response_timeout
             Time to wait for the response in seconds.
+            `None` will wait indefinitely.
 
         Raises
         ------
@@ -136,21 +195,13 @@ class Client(aiomqtt.Client):
         Returns
         -------
         Packet
-            Response message.
+            Response packet.
         """
         if sub_properties is None:
             sub_properties = Properties(PacketTypes.SUBSCRIBE)  # type: ignore [no-untyped-call]
 
-        if sub_timeout is None:
-            # aiomqtt use `math.inf` instead of `None` for infinite timeouts.
-            sub_timeout = math.inf
-
         if pub_properties is None:
             pub_properties = Properties(PacketTypes.PUBLISH)  # type: ignore [no-untyped-call]
-
-        if pub_timeout is None:
-            # aiomqtt use `math.inf` instead of `None` for infinite timeouts.
-            pub_timeout = math.inf
 
         # Create a unique topic for the request to identify the response.
         response_topic = f"fastcc/responses/{uuid.uuid4()}"
@@ -158,78 +209,74 @@ class Client(aiomqtt.Client):
         # Set the response-topic as a property for the request.
         pub_properties.ResponseTopic = response_topic
 
+        details = f"#request: subscribe to {response_topic=!r} with {qos=}"
+        _logger.debug(details)
+
         # Subscribe to the response-topic before publishing to not miss the
         # response.
-        try:
-            async with asyncio.timeout(sub_timeout):
-                await self.subscribe(
-                    response_topic,
-                    qos=qos,
-                    properties=sub_properties,
-                )
-        except TimeoutError:
-            details = f"Subscribe on topic={response_topic!r} timed out"
-            _logger.error(details)
-            raise
+        await self.subscribe(
+            response_topic,
+            qos=qos,
+            properties=sub_properties,
+            timeout=sub_timeout,
+        )
 
         details = (
-            f"Publishing MQTT request to {topic=!r} with "
-            f"response-topic={response_topic!r} and QoS={qos}"
+            f"#request: publish to {topic=!r} with {response_topic=!r} "
+            f"and {qos=}"
         )
         _logger.debug(details)
-        try:
-            async with asyncio.timeout(pub_timeout):
-                await self.publish(
-                    topic,
-                    message,
-                    qos=qos,
-                    retain=retain,
-                    properties=pub_properties,
-                )
-        except TimeoutError:
-            details = f"Publish on topic={response_topic!r} timed out"
-            _logger.error(details)
-            raise
+
+        await self.publish(
+            topic,
+            packet,
+            qos=qos,
+            retain=retain,
+            properties=pub_properties,
+            timeout=pub_timeout,
+        )
 
         details = (
-            f"Awaiting MQTT response on topic={response_topic!r} with "
-            f"timeout={response_timeout}"
+            f"#request: await response on {response_topic=!r} with "
+            f"{response_timeout=}"
         )
         _logger.debug(details)
+
         try:
             async with asyncio.timeout(response_timeout):
-                response = await self.__response(
-                    response_topic,
-                    response_type=response_type,
-                )
-                details = f"Received MQTT response on topic={response_topic!r}"
+                response = await self.__response(response_topic, response_type)
+
+                details = f"#request: got response on {response_topic=!r}"
                 _logger.debug(details)
+
                 return response
         except TimeoutError:
-            details = f"Response on topic={response_topic!r} timed out"
+            details = f"#request: response on {response_topic=!r} timed out"
             _logger.error(details)
             raise
 
-    async def __response(
+    async def __response[T: Packet](
         self,
         topic: str,
-        *,
-        response_type: type[Packet],
-    ) -> Packet:
+        response_type: type[T],
+    ) -> T:
         while True:
             message = await anext(self.messages)
 
             if not isinstance(message.payload, bytes):
-                details = "Message has invalid payload - continue."
-                _logger.debug(details)
-                continue
+                details = (
+                    f"message payload has unimplemented type "
+                    f"{type(message.payload)}"
+                )
+                _logger.error(details)
+                raise NotImplementedError(details)
 
-            # Not using `topic.matches()` here, as the response-topic should
-            # be unique to the request. Therefore a normal string comparison
-            # is sufficient (and faster).
+            # Not using `topic.matches()` here, as the response-topic
+            # should be unique to the request. Therefore a normal string
+            # comparison is sufficient (and faster).
             if message.topic.value != topic:
-                # Put the message back into the messages-queue, as it was
-                # not the response to the request.
+                # Put the message back into the messages-queue, as it
+                # was not the response to the request.
                 await self._queue.put(message)
                 continue
 
