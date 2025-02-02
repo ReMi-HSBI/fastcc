@@ -9,12 +9,11 @@ import typing
 if typing.TYPE_CHECKING:
     import aiomqtt
 
-    from fastcc.client import Client
-
 from google.protobuf.message import Message
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 
+from fastcc.client import Client
 from fastcc.router import Router
 from fastcc.utilities import interpretation
 from fastcc.utilities.mqtt import QoS
@@ -27,39 +26,31 @@ class FastCC:
 
     Parameters
     ----------
-    client
-        MQTT client instance.
-
-    Raises
-    ------
-    ValueError
-        If `client` does not support MQTT version 5.0.
+    args
+        Positional arguments to pass to the MQTT client.
+    kwargs
+        Keyword arguments to pass to the MQTT client.
     """
 
-    def __init__(self, client: Client) -> None:
-        self._client = client
+    def __init__(self, *args: typing.Any, **kwargs: typing.Any) -> None:  # noqa: ANN401
+        self._client = Client(*args, **kwargs)
         self._router = Router()
         self._injectors: dict[str, typing.Any] = {}
 
     async def run(self) -> None:
-        """Start the application.
+        """Start the application."""
+        async with self._client:
+            for topic, data in self._router.routes.items():
+                for qos in data:
+                    await self._client.subscribe(topic, qos=qos)
+                    _logger.info(
+                        "subscribe to topic %r with qos=%d (%s)",
+                        topic,
+                        qos.value,
+                        qos.name,
+                    )
 
-        Raises
-        ------
-        ValueError
-            If the initialized MQTT client is not connected.
-        """
-        if not self._client._connected.done():  # noqa: SLF001
-            details = "client is not connected"
-            _logger.error(details)
-            raise ValueError(details)
-
-        for topic, data in self._router.routes.items():
-            for qos in data:
-                _logger.info("Subscribing to topic %s (QoS %d)", topic, qos)
-                await self._client.subscribe(topic, qos=QoS(qos))
-
-        await self.__listen()
+            await self.__listen()
 
     def add_router(self, router: Router) -> None:
         """Add a router to the app.
@@ -80,26 +71,48 @@ class FastCC:
         self._injectors.update(kwargs)
 
     async def __listen(self) -> None:
+        _logger.info("listen for incoming messages")
         async for message in self._client.messages:
             await self.__handle(message)
 
     async def __handle(self, message: aiomqtt.Message) -> None:  # noqa: C901
-        if not isinstance(message.payload, bytes):
+        topic = message.topic.value
+        qos = QoS(message.qos)
+        payload = message.payload
+
+        _logger.debug(
+            "handle message on topic %r with qos=%d (%s): %r",
+            topic,
+            qos.value,
+            qos.name,
+            payload,
+        )
+
+        if not isinstance(payload, bytes):
             details = (
-                f"message payload has unimplemented type "
-                f"{type(message.payload)}"
+                f"ignore message with unimplemented payload type "
+                f"{type(payload).__name__!r}"
             )
             _logger.error(details)
-            raise NotImplementedError(details)
+            raise TypeError(details)
 
-        if (routings := self._router.routes.get(message.topic.value)) is None:
-            return
+        # This should never happen, but just in case - dev's make mistakes.
+        if (routings := self._router.routes.get(topic)) is None:
+            details = f"routings not found for message on topic {topic!r}"
+            _logger.error(details)
+            raise ValueError(details)
 
-        if (callbacks := routings.get(QoS(message.qos))) is None:
-            return
+        # This should also never happen, but just in case - dev's make mistakes.
+        if (routes := routings.get(qos)) is None:
+            details = (
+                f"routes not found for message on topic {topic!r} "
+                f"with qos={qos.value} ({qos.name})"
+            )
+            _logger.error(details)
+            raise ValueError(details)
 
-        for callback in callbacks:
-            signature = inspect.signature(callback, eval_str=True)
+        for route in routes:
+            signature = inspect.signature(route, eval_str=True)
 
             kwargs = {
                 key: value
@@ -107,32 +120,46 @@ class FastCC:
                 if key in signature.parameters
             }
 
-            packet_parameter = interpretation.get_packet_parameter(callback)
+            packet_parameter = interpretation.get_packet_parameter(route)
             if packet_parameter is not None:
                 packet = interpretation.bytes_to_packet(
-                    message.payload,
+                    payload,
                     packet_parameter.annotation,
                 )
                 kwargs[packet_parameter.name] = packet
 
-            response = None
             properties = Properties(PacketTypes.PUBLISH)  # type: ignore [no-untyped-call]
+
             try:
-                response = await callback(**kwargs)
-            except Exception as error:
+                response = await route(**kwargs)
+            except Exception as error:  # noqa: BLE001
                 response = str(error)
-                properties.UserProperty = [("error", error.__class__.__name__)]
-                _logger.exception("error while handling message")
+
+                error_name = error.__class__.__name__
+                properties.UserProperty = [("error", error_name)]
+
+                _logger.error(
+                    "got %r while handling message: %r",
+                    error_name,
+                    response,
+                )
 
             response_topic = getattr(message.properties, "ResponseTopic", None)
-
             if response_topic is not None:
                 if isinstance(response, Message):
                     response = response.SerializeToString()
 
+                _logger.debug(
+                    "publish response on topic %r with qos=%d (%s): %r",
+                    response_topic,
+                    qos.value,
+                    qos.name,
+                    response,
+                )
+
                 await self._client.publish(
                     response_topic,
                     response,
-                    qos=QoS(message.qos),
+                    qos=qos,
                     properties=properties,
                 )

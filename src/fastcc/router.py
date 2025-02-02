@@ -17,15 +17,15 @@ class Router:
     """Router for communication endpoints."""
 
     def __init__(self) -> None:
-        self._routes: dict[str, dict[int, list[Routable]]] = {}
+        self._routes: dict[str, dict[QoS, list[Routable]]] = {}
 
     @property
-    def routes(self) -> dict[str, dict[int, list[Routable]]]:
+    def routes(self) -> dict[str, dict[QoS, list[Routable]]]:
         """Return all registered routes.
 
         Returns
         -------
-        dict[str, dict[int, list[Routable]]]
+        dict[str, dict[QoS, list[Routable]]]
             All registered routes.
         """
         return self._routes

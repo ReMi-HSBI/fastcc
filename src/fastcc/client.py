@@ -27,6 +27,13 @@ class Client(aiomqtt.Client):
     """Client to nicely communicate with `FastCC` applications.
 
     This class is a wrapper around `aiomqtt.Client`.
+
+    Parameters
+    ----------
+    args
+        Positional arguments to pass to the MQTT client.
+    kwargs
+        Keyword arguments to pass to the MQTT client.
     """
 
     def __init__(self, *args: typing.Any, **kwargs: typing.Any) -> None:  # noqa: ANN401
@@ -209,11 +216,15 @@ class Client(aiomqtt.Client):
         # Set the response-topic as a property for the request.
         pub_properties.ResponseTopic = response_topic
 
-        details = f"#request: subscribe to {response_topic=!r} with {qos=}"
-        _logger.debug(details)
+        _logger.debug(
+            "#request: subscribe to topic %r with qos=%d (%s)",
+            response_topic,
+            qos.value,
+            qos.name,
+        )
 
-        # Subscribe to the response-topic before publishing to not miss the
-        # response.
+        # Subscribe to the response-topic before publishing to not miss
+        # the response.
         await self.subscribe(
             response_topic,
             qos=qos,
@@ -221,11 +232,13 @@ class Client(aiomqtt.Client):
             timeout=sub_timeout,
         )
 
-        details = (
-            f"#request: publish to {topic=!r} with {response_topic=!r} "
-            f"and {qos=}"
+        _logger.debug(
+            "#request: publish to topic %r with qos=%d (%s): %r",
+            topic,
+            qos.value,
+            qos.name,
+            packet,
         )
-        _logger.debug(details)
 
         await self.publish(
             topic,
@@ -236,23 +249,22 @@ class Client(aiomqtt.Client):
             timeout=pub_timeout,
         )
 
-        details = (
-            f"#request: await response on {response_topic=!r} with "
-            f"{response_timeout=}"
+        _logger.debug(
+            "#request: await response on topic %r with timeout=%r",
+            response_topic,
+            response_timeout,
         )
-        _logger.debug(details)
 
         try:
             async with asyncio.timeout(response_timeout):
                 response = await self.__response(response_topic, response_type)
-
-                details = f"#request: got response on {response_topic=!r}"
-                _logger.debug(details)
-
+                _logger.debug("#request: got response on %r", response_topic)
                 return response
         except TimeoutError:
-            details = f"#request: response on {response_topic=!r} timed out"
-            _logger.error(details)
+            _logger.error(
+                "#request: response on topic %r timed out",
+                response_topic,
+            )
             raise
 
     async def __response[T: Packet](
