@@ -34,6 +34,9 @@ This framework is built on top of [empicano](https://github.com/empicano)'s [aio
 ## Example
 
 ```python
+# app.py
+from __future__ import annotations
+
 import asyncio
 import contextlib
 import logging
@@ -46,24 +49,42 @@ import fastcc
 router = fastcc.Router()
 
 
-@router.route("example")
-async def example(name: str, *, database: dict[str, typing.Any]) -> str:
-    database[name] = 1
-    print(database)
+@router.route("greet")
+async def greet(name: str, *, database: dict[str, typing.Any]) -> str:
+    """Greet a user.
+
+    Parameters
+    ----------
+    name
+        The name of the user.
+        Autofilled by fastcc.
+    database
+        The database.
+        Autofilled by fastcc.
+
+    Returns
+    -------
+    str
+        The greeting message.
+    """
+    # ... do some async work
+    await asyncio.sleep(0.1)
+
+    if name in database:
+        return f"Hello, {name}! Welcome back!"
     return f"Hello, {name}!"
 
 
 async def main() -> None:
+    """Run the app."""
     logging.basicConfig(level=logging.INFO)
 
     database: dict[str, typing.Any] = {}
-    mqtt_client = fastcc.Client("test.mosquitto.org")
-    app = fastcc.FastCC(mqtt_client)
+    app = fastcc.FastCC("localhost")
     app.add_router(router)
     app.add_injector(database=database)
 
-    async with mqtt_client:
-        await app.run()
+    await app.run()
 
 
 # https://github.com/empicano/aiomqtt?tab=readme-ov-file#note-for-windows-users
@@ -72,4 +93,37 @@ if sys.platform.lower() == "win32" or os.name.lower() == "nt":
 
 with contextlib.suppress(KeyboardInterrupt):
     asyncio.run(main())
+```
+
+```python
+# client.py
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import logging
+import os
+import sys
+
+import fastcc
+
+_logger = logging.getLogger(__name__)
+
+
+async def main() -> None:
+    """Run the app."""
+    logging.basicConfig(level=logging.INFO)
+
+    async with fastcc.Client("localhost") as client:
+        response = await client.request("greet", "Justin", response_type=str)
+        _logger.info("response: %r", response)
+
+
+# https://github.com/empicano/aiomqtt?tab=readme-ov-file#note-for-windows-users
+if sys.platform.lower() == "win32" or os.name.lower() == "nt":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+with contextlib.suppress(KeyboardInterrupt):
+    asyncio.run(main())
+
 ```

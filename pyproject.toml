@@ -67,6 +67,9 @@ src = ["src"]
 cache-dir = ".cache/ruff"
 line-length = 80
 preview = true
+extend-exclude = [
+    "examples/location_pb2.py",
+]
 
 [tool.ruff.format]
 docstring-code-format = true
@@ -143,6 +146,9 @@ ignore = [
 
 [tool.ruff.lint.extend-per-file-ignores]
 "docs/src/conf.py" = [
+    "INP001",   # implicit-namespace-package (https://docs.astral.sh/ruff/rules/implicit-namespace-package)
+]
+"examples/*.py" = [
     "INP001",   # implicit-namespace-package (https://docs.astral.sh/ruff/rules/implicit-namespace-package)
 ]
 
