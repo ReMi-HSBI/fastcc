@@ -288,75 +288,90 @@ class Client(aiomqtt.Client):
             )
             raise
 
-    async def __response[T: Packet](
+    async def __response[T: Packet](  # noqa: C901
         self,
         response_topic: str,
         correlation_data: bytes,
         response_type: type[T],
     ) -> T:
         collisions = 0
-        async for message in self.messages:
-            if message.topic.matches(response_topic):
-                message_correlation_data = getattr(
-                    message.properties,
-                    "CorrelationData",
-                    None,
-                )
-                if message_correlation_data is None:
-                    details = (
-                        "#request: invalid response on topic %r: "
-                        "no correlation data - ignore (hacking attempt?)"
+        try:
+            async for message in self.messages:
+                if message.topic.matches(response_topic):
+                    message_correlation_data = getattr(
+                        message.properties,
+                        "CorrelationData",
+                        None,
                     )
-                    _logger.warning(details, response_topic)
-                    continue
-
-                if message_correlation_data != correlation_data:
-                    # Probably a response-topic collision, which is
-                    # unlikely, but possible => put the message back
-                    _logger.debug(
-                        "#request: response collision on %r",
-                        response_topic,
-                    )
-
-                    await self._queue.put(message)
-
-                    if collisions > _MAX_COLLISIONS:
+                    if message_correlation_data is None:
                         details = (
-                            f"#request: too many collisions for "
-                            f"response-topic {response_topic!r}"
+                            "#request: invalid response on topic %r: "
+                            "no correlation data - ignore (hacking attempt?)"
+                        )
+                        _logger.warning(details, response_topic)
+                        continue
+
+                    if message_correlation_data != correlation_data:
+                        # Probably a response-topic collision, which is
+                        # unlikely, but possible => put the message back
+                        _logger.debug(
+                            "#request: response collision on %r",
+                            response_topic,
+                        )
+
+                        await self._queue.put(message)
+
+                        if collisions > _MAX_COLLISIONS:
+                            details = (
+                                f"#request: too many collisions for "
+                                f"response-topic {response_topic!r}"
+                            )
+                            _logger.error(details)
+                            raise ValueError(details)
+
+                        # Wait a bit to not overload the CPU if the message
+                        # is the only one in the queue.
+                        if self._queue.qsize() == 1:
+                            await asyncio.sleep(0.1)
+
+                        continue
+
+                    if not isinstance(message.payload, bytes):
+                        details = (
+                            f"#request: message payload has unimplemented "
+                            f"type {type(message.payload)}"
                         )
                         _logger.error(details)
-                        raise ValueError(details)
+                        raise NotImplementedError(details)
 
-                    # Wait a bit to not overload the CPU if the message
-                    # is the only one in the queue.
-                    if self._queue.qsize() == 1:
-                        await asyncio.sleep(0.1)
-
-                    continue
-
-                if not isinstance(message.payload, bytes):
-                    details = (
-                        f"#request: message payload has unimplemented "
-                        f"type {type(message.payload)}"
+                    # Check for thrown errors
+                    message_user_properties = getattr(
+                        message.properties,
+                        "UserProperty",
+                        None,
                     )
-                    _logger.error(details)
-                    raise NotImplementedError(details)
+                    if message_user_properties is not None:
+                        user_property_keys = [p[0] for p in message_user_properties]
+                        if "error" in user_property_keys:
+                            details = message.payload.decode()
+                            _logger.error(details)
+                            raise ValueError(details)
 
-                # Check for thrown errors
-                message_user_properties = getattr(
-                    message.properties,
-                    "UserProperty",
-                    None,
-                )
-                if message_user_properties is not None:
-                    user_property_keys = [p[0] for p in message_user_properties]
-                    if "error" in user_property_keys:
-                        details = message.payload.decode()
-                        _logger.error(details)
-                        raise ValueError(details)
+                    return bytes_to_packet(message.payload, response_type)
 
-                return bytes_to_packet(message.payload, response_type)
+                await self._queue.put(message)
+
+                # Wait a bit to not overload the CPU if the message is
+                # the only one in the queue.
+                if self._queue.qsize() == 1:
+                    await asyncio.sleep(0.1)
+
+        except aiomqtt.MqttError:
+            details = "#request: disconnected during response message iteration"
+            _logger.error(details)
+
+            raise ConnectionAbortedError(details) from None
 
         details = f"#request: no response on topic {response_topic!r}"
+        _logger.error(details)
         raise ValueError(details)
