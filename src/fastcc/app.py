@@ -75,7 +75,7 @@ class FastCC:
         async for message in self._client.messages:
             await self.__handle(message)
 
-    async def __handle(self, message: aiomqtt.Message) -> None:  # noqa: C901
+    async def __handle(self, message: aiomqtt.Message) -> None:
         topic = message.topic.value
         qos = QoS(message.qos)
         payload = message.payload
@@ -145,21 +145,31 @@ class FastCC:
                 )
 
             response_topic = getattr(message.properties, "ResponseTopic", None)
-            if response_topic is not None:
-                if isinstance(response, Message):
-                    response = response.SerializeToString()
+            if response_topic is None:
+                return
 
-                _logger.debug(
-                    "publish response on topic %r with qos=%d (%s): %r",
-                    response_topic,
-                    qos.value,
-                    qos.name,
-                    response,
-                )
+            correlation_data = getattr(
+                message.properties,
+                "CorrelationData",
+                None,
+            )
+            if correlation_data is not None:
+                properties.CorrelationData = correlation_data
 
-                await self._client.publish(
-                    response_topic,
-                    response,
-                    qos=qos,
-                    properties=properties,
-                )
+            if isinstance(response, Message):
+                response = response.SerializeToString()
+
+            _logger.debug(
+                "publish response on topic %r with qos=%d (%s): %r",
+                response_topic,
+                qos.value,
+                qos.name,
+                response,
+            )
+
+            await self._client.publish(
+                response_topic,
+                response,
+                qos=qos,
+                properties=properties,
+            )

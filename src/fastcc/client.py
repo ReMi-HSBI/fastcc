@@ -22,6 +22,8 @@ from fastcc.utilities.mqtt import QoS
 
 _logger = logging.getLogger(__name__)
 
+_MAX_COLLISIONS = 10
+
 
 class Client(aiomqtt.Client):
     """Client to nicely communicate with `FastCC` applications.
@@ -225,6 +227,12 @@ class Client(aiomqtt.Client):
         # Set the response-topic as a property for the request.
         pub_properties.ResponseTopic = response_topic
 
+        # Create a unique correlation-data id to make the request more secure.
+        correlation_data = str(uuid.uuid4()).encode()
+
+        # Set the correlation-data as a property for the request.
+        pub_properties.CorrelationData = correlation_data
+
         _logger.debug(
             "#request: subscribe to topic %r with qos=%d (%s)",
             response_topic,
@@ -266,7 +274,11 @@ class Client(aiomqtt.Client):
 
         try:
             async with asyncio.timeout(response_timeout):
-                response = await self.__response(response_topic, response_type)
+                response = await self.__response(
+                    response_topic,
+                    correlation_data,
+                    response_type,
+                )
                 _logger.debug("#request: got response on %r", response_topic)
                 return response
         except TimeoutError:
@@ -278,35 +290,73 @@ class Client(aiomqtt.Client):
 
     async def __response[T: Packet](
         self,
-        topic: str,
+        response_topic: str,
+        correlation_data: bytes,
         response_type: type[T],
     ) -> T:
-        while True:
-            message = await anext(self.messages)
-
-            if not isinstance(message.payload, bytes):
-                details = (
-                    f"message payload has unimplemented type "
-                    f"{type(message.payload)}"
+        collisions = 0
+        async for message in self.messages:
+            if message.topic.matches(response_topic):
+                message_correlation_data = getattr(
+                    message.properties,
+                    "CorrelationData",
+                    None,
                 )
-                _logger.error(details)
-                raise NotImplementedError(details)
+                if message_correlation_data is None:
+                    details = (
+                        "#request: invalid response on topic %r: "
+                        "no correlation data - ignore (hacking attempt?)"
+                    )
+                    _logger.warning(details, response_topic)
+                    continue
 
-            # Not using `topic.matches()` here, as the response-topic
-            # should be unique to the request. Therefore a normal string
-            # comparison is sufficient (and faster).
-            if message.topic.value != topic:
-                # Put the message back into the messages-queue, as it
-                # was not the response to the request.
-                await self._queue.put(message)
-                continue
+                if message_correlation_data != correlation_data:
+                    # Probably a response-topic collision, which is
+                    # unlikely, but possible => put the message back
+                    _logger.debug(
+                        "#request: response collision on %r",
+                        response_topic,
+                    )
 
-            # Check for thrown errors on the responder-side.
-            user_properties = getattr(message.properties, "UserProperty", [])
-            user_property_keys = [i[0] for i in user_properties]
-            if "error" in user_property_keys:
-                details = message.payload.decode()
-                _logger.error(details)
-                raise ValueError(details)
+                    await self._queue.put(message)
 
-            return bytes_to_packet(message.payload, response_type)
+                    if collisions > _MAX_COLLISIONS:
+                        details = (
+                            f"#request: too many collisions for "
+                            f"response-topic {response_topic!r}"
+                        )
+                        _logger.error(details)
+                        raise ValueError(details)
+
+                    # Wait a bit to not overload the CPU if the message
+                    # is the only one in the queue.
+                    if self._queue.qsize() == 1:
+                        await asyncio.sleep(0.1)
+
+                    continue
+
+                if not isinstance(message.payload, bytes):
+                    details = (
+                        f"#request: message payload has unimplemented "
+                        f"type {type(message.payload)}"
+                    )
+                    _logger.error(details)
+                    raise NotImplementedError(details)
+
+                # Check for thrown errors
+                message_user_properties = getattr(
+                    message.properties,
+                    "UserProperty",
+                    None,
+                )
+                if message_user_properties is not None:
+                    user_property_keys = [p[0] for p in message_user_properties]
+                    if "error" in user_property_keys:
+                        details = message.payload.decode()
+                        _logger.error(details)
+                        raise ValueError(details)
+
+                return bytes_to_packet(message.payload, response_type)
+
+        details = f"#request: no response on topic {response_topic!r}"
+        raise ValueError(details)
