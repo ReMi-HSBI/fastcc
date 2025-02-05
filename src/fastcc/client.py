@@ -32,11 +32,20 @@ class Client(aiomqtt.Client):
     ----------
     args
         Positional arguments to pass to the MQTT client.
+    response_topic_prefix
+        Prefix for the response topics.
     kwargs
         Keyword arguments to pass to the MQTT client.
     """
 
-    def __init__(self, *args: typing.Any, **kwargs: typing.Any) -> None:  # noqa: ANN401
+    def __init__(
+        self,
+        *args: typing.Any,  # noqa: ANN401
+        response_topic_prefix: str = "fastcc/responses",
+        **kwargs: typing.Any,  # noqa: ANN401
+    ) -> None:
+        self._response_topic_prefix = response_topic_prefix.rstrip("/")
+
         # Ensure that the MQTT client uses the MQTT v5 protocol.
         kwargs.update({"protocol": aiomqtt.ProtocolVersion.V5})
 
@@ -211,7 +220,7 @@ class Client(aiomqtt.Client):
             pub_properties = Properties(PacketTypes.PUBLISH)  # type: ignore [no-untyped-call]
 
         # Create a unique topic for the request to identify the response.
-        response_topic = f"fastcc/responses/{uuid.uuid4()}"
+        response_topic = f"{self._response_topic_prefix}/{uuid.uuid4()}"
 
         # Set the response-topic as a property for the request.
         pub_properties.ResponseTopic = response_topic
