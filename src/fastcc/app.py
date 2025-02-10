@@ -14,6 +14,7 @@ from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 
 from fastcc.client import Client
+from fastcc.exceptions import MQTTError
 from fastcc.router import Router
 from fastcc.utilities import interpretation
 from fastcc.utilities.mqtt import QoS
@@ -75,7 +76,7 @@ class FastCC:
         async for message in self._client.messages:
             await self.__handle(message)
 
-    async def __handle(self, message: aiomqtt.Message) -> None:
+    async def __handle(self, message: aiomqtt.Message) -> None:  # noqa: C901
         topic = message.topic.value
         qos = QoS(message.qos)
         payload = message.payload
@@ -132,16 +133,24 @@ class FastCC:
 
             try:
                 response = await route(**kwargs)
+            except MQTTError as error:
+                response = error.message
+                properties.UserProperty = [("error", str(error.error_code))]
+                _logger.debug(
+                    "got error %r while handling message (topic=%r): %r",
+                    error,
+                    topic,
+                    payload,
+                )
             except Exception as error:  # noqa: BLE001
                 response = str(error)
-
                 error_name = error.__class__.__name__
                 properties.UserProperty = [("error", error_name)]
-
-                _logger.error(
-                    "got %r while handling message: %r",
-                    error_name,
-                    response,
+                _logger.debug(
+                    "got error %r while handling message (topic=%r): %r",
+                    error,
+                    topic,
+                    payload,
                 )
 
             response_topic = getattr(message.properties, "ResponseTopic", None)

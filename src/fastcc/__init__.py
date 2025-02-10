@@ -16,10 +16,11 @@ References
 
 from __future__ import annotations
 
-__all__ = ["Client", "FastCC", "Packet", "QoS", "Router"]
+__all__ = ["Client", "FastCC", "MQTTError", "Packet", "QoS", "Router"]
 
 from .app import FastCC
 from .client import Client
+from .exceptions import MQTTError
 from .router import Router
 from .utilities.mqtt import QoS
 from .utilities.type_definitions import Packet

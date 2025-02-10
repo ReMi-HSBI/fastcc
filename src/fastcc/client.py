@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import math
 import typing
@@ -17,6 +18,7 @@ from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 from paho.mqtt.subscribeoptions import SubscribeOptions
 
+from fastcc.exceptions import MQTTError
 from fastcc.utilities.interpretation import bytes_to_packet
 from fastcc.utilities.mqtt import QoS
 
@@ -348,14 +350,22 @@ class Client(aiomqtt.Client):
                     message_user_properties = getattr(
                         message.properties,
                         "UserProperty",
-                        None,
+                        [],
                     )
-                    if message_user_properties is not None:
-                        user_property_keys = [p[0] for p in message_user_properties]
-                        if "error" in user_property_keys:
-                            details = message.payload.decode()
-                            _logger.error(details)
+                    with contextlib.suppress(StopIteration):
+                        error_user_property: tuple[str, str] = next(
+                            p
+                            for p in message_user_properties
+                            if p[0] == "error"
+                        )
+                        details = message.payload.decode()
+                        _logger.error(details)
+
+                        error_code_or_name = error_user_property[1]
+                        if not error_code_or_name.isdigit():
                             raise ValueError(details)
+
+                        raise MQTTError(details, int(error_code_or_name))
 
                     return bytes_to_packet(message.payload, response_type)
 
