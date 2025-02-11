@@ -7,7 +7,6 @@ import contextlib
 import logging
 import os
 import sys
-import typing
 
 import fastcc
 
@@ -15,7 +14,7 @@ router = fastcc.Router()
 
 
 @router.route("greet")
-async def greet(name: str, *, database: dict[str, typing.Any]) -> str:
+async def greet(name: str, *, database: dict[str, int]) -> str:
     """Greet a user.
 
     Parameters
@@ -35,19 +34,23 @@ async def greet(name: str, *, database: dict[str, typing.Any]) -> str:
     # ... do some async work
     await asyncio.sleep(0.1)
 
-    if name in database:
-        return f"Hello, {name}! Welcome back!"
-    return f"Hello, {name}!"
+    database[name] += 1
+    occurrence = database[name]
+    return f"Hello, {name}! Saw you {occurrence} times!"
 
 
 async def main() -> None:
     """Run the app."""
     logging.basicConfig(level=logging.INFO)
 
-    database: dict[str, typing.Any] = {}
+    database: dict[str, int] = {"Alice": 0, "Bob": 0}
     app = fastcc.FastCC("localhost")
     app.add_router(router)
     app.add_injector(database=database)
+    app.add_exception_handler(
+        KeyError,
+        lambda e: fastcc.MQTTError(repr(e), 404),
+    )
 
     await app.run()
 

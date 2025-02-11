@@ -358,14 +358,14 @@ class Client(aiomqtt.Client):
                             for p in message_user_properties
                             if p[0] == "error"
                         )
-                        details = message.payload.decode()
-                        _logger.error(details)
 
-                        error_code_or_name = error_user_property[1]
-                        if not error_code_or_name.isdigit():
-                            raise ValueError(details)
+                        _logger.debug(
+                            "#request: error occurred: %s",
+                            message.payload.decode(),
+                        )
 
-                        raise MQTTError(details, int(error_code_or_name))
+                        error_code = int(error_user_property[1])
+                        raise MQTTError(message.payload.decode(), error_code)
 
                     return bytes_to_packet(message.payload, response_type)
 

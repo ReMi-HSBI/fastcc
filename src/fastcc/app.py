@@ -9,6 +9,8 @@ import typing
 if typing.TYPE_CHECKING:
     import aiomqtt
 
+    from fastcc.utilities.type_aliases import ExceptionHandler
+
 from google.protobuf.message import Message
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
@@ -37,6 +39,8 @@ class FastCC:
         self._client = Client(*args, **kwargs)
         self._router = Router()
         self._injectors: dict[str, typing.Any] = {}
+        self._exception_handlers: dict[type[Exception], ExceptionHandler] = {}
+        self._exception_handlers.setdefault(MQTTError, lambda e: e)  # type: ignore [return-value, arg-type]
 
     async def run(self) -> None:
         """Start the application."""
@@ -70,6 +74,22 @@ class FastCC:
         arguments if they are present (by name!).
         """
         self._injectors.update(kwargs)
+
+    def add_exception_handler(
+        self,
+        exception_type: type[Exception],
+        handler: ExceptionHandler,
+    ) -> None:
+        """Register an exception handler.
+
+        Parameters
+        ----------
+        exception_type
+            Type of the exception to handle.
+        handler
+            Handler callable.
+        """
+        self._exception_handlers[exception_type] = handler
 
     async def __listen(self) -> None:
         _logger.info("listen for incoming messages")
@@ -133,25 +153,23 @@ class FastCC:
 
             try:
                 response = await route(**kwargs)
-            except MQTTError as error:
-                response = error.message
-                properties.UserProperty = [("error", str(error.error_code))]
-                _logger.debug(
-                    "got error %r while handling message (topic=%r): %r",
-                    error,
-                    topic,
-                    payload,
-                )
             except Exception as error:  # noqa: BLE001
-                response = str(error)
-                error_name = error.__class__.__name__
-                properties.UserProperty = [("error", error_name)]
-                _logger.debug(
-                    "got error %r while handling message (topic=%r): %r",
-                    error,
-                    topic,
-                    payload,
+                details = (
+                    "got %r while handling message on topic=%r with "
+                    "payload_length=%d"
                 )
+                _logger.debug(details, error, topic, len(payload))
+
+                response = repr(error)
+                user_property = ("error", "-1")
+
+                exception_handler = self._exception_handlers.get(type(error))
+                if exception_handler is not None:
+                    mqtt_error = exception_handler(error)
+                    response = mqtt_error.message
+                    user_property = ("error", str(mqtt_error.error_code))
+
+                properties.UserProperty = [user_property]
 
             response_topic = getattr(message.properties, "ResponseTopic", None)
             if response_topic is None:

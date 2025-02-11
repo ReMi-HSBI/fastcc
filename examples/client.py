@@ -18,7 +18,17 @@ async def main() -> None:
     logging.basicConfig(level=logging.INFO)
 
     async with fastcc.Client("localhost") as client:
-        response = await client.request("greet", "Justin", response_type=str)
+        try:
+            response = await client.request(
+                "greet",
+                "Charlie",
+                response_type=str,
+            )
+        except fastcc.MQTTError as e:
+            details = f"An error occurred on the server: {e.message}"
+            _logger.error(details)
+
+        response = await client.request("greet", "Alice", response_type=str)
         _logger.info("response: %r", response)
 
 
