@@ -161,7 +161,7 @@ class FastCC:
                 _logger.debug(details, error, topic, len(payload))
 
                 response = repr(error)
-                user_property = ("error", "-1")
+                user_property = ("error", "None")
 
                 exception_handler = self._exception_handlers.get(type(error))
                 if exception_handler is not None:

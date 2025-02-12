@@ -290,7 +290,7 @@ class Client(aiomqtt.Client):
             )
             raise
 
-    async def __response[T: Packet](  # noqa: C901
+    async def __response[T: Packet](
         self,
         response_topic: str,
         correlation_data: bytes,
@@ -363,8 +363,12 @@ class Client(aiomqtt.Client):
                             "#request: error occurred: %s",
                             message.payload.decode(),
                         )
-
-                        error_code = int(error_user_property[1])
+                        error_code_or_none = error_user_property[1]
+                        error_code = (
+                            int(error_code_or_none)
+                            if error_code_or_none != "None"
+                            else None
+                        )
                         raise MQTTError(message.payload.decode(), error_code)
 
                     return bytes_to_packet(message.payload, response_type)

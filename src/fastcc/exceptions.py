@@ -4,12 +4,13 @@
 class MQTTError(Exception):
     """Exception class for communicating errors over MQTT."""
 
-    def __init__(self, message: str, error_code: int) -> None:
+    def __init__(self, message: str, error_code: int | None = None) -> None:
         self._message = message
         self._error_code = error_code
+        super().__init__(message)
 
     @property
-    def error_code(self) -> int:
+    def error_code(self) -> int | None:
         """Error code of the exception."""
         return self._error_code
 
