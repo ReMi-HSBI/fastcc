@@ -41,7 +41,7 @@ async def greet(name: str, *, database: dict[str, int]) -> str:
 
 async def main() -> None:
     """Run the app."""
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.DEBUG)
 
     database: dict[str, int] = {"Alice": 0, "Bob": 0}
     app = fastcc.FastCC("localhost")

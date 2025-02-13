@@ -15,7 +15,7 @@ _logger = logging.getLogger(__name__)
 
 async def main() -> None:
     """Run the app."""
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.DEBUG)
 
     async with fastcc.Client("localhost") as client:
         try:

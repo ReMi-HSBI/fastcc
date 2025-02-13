@@ -18,13 +18,11 @@ from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 from paho.mqtt.subscribeoptions import SubscribeOptions
 
-from fastcc.exceptions import MQTTError
 from fastcc.utilities.interpretation import bytes_to_packet
 from fastcc.utilities.mqtt import QoS
+from fastcc.utilities.security import check_for_errors, verify_correlation_data
 
 _logger = logging.getLogger(__name__)
-
-_MAX_COLLISIONS = 10
 
 
 class Client(aiomqtt.Client):
@@ -58,7 +56,7 @@ class Client(aiomqtt.Client):
     async def publish(  # type: ignore [override]  # noqa: PLR0913
         self,
         topic: str,
-        packet: Packet | None = None,
+        payload: Packet | None = None,
         *,
         qos: QoS = QoS.AT_MOST_ONCE,
         retain: bool = False,
@@ -71,9 +69,9 @@ class Client(aiomqtt.Client):
         ----------
         topic
             Topic to publish the message to.
-        packet
-            Packet to publish.
-            `None` will publish an empty packet.
+        payload
+            Payload to publish.
+            `None` will publish an empty message.
         qos
             Quality of service level.
         retain
@@ -86,7 +84,7 @@ class Client(aiomqtt.Client):
 
         Raises
         ------
-        ConnectionError
+        RuntimeError
             If the publication fails.
         TimeoutError
             If the publication times out.
@@ -95,26 +93,36 @@ class Client(aiomqtt.Client):
         if timeout is None:
             timeout = math.inf
 
-        if isinstance(packet, Message):
-            packet = packet.SerializeToString()
+        if isinstance(payload, Message):
+            payload = payload.SerializeToString()
 
         try:
             await super().publish(
                 topic,
-                packet,
+                payload,
                 qos.value,
                 retain,
                 properties,
                 timeout=timeout,
             )
         except aiomqtt.MqttCodeError as e:
-            details = str(e)
+            details = (
+                f"Publish to topic={topic!r} with "
+                f"qos={qos.value} [{qos.name}] failed with "
+                f"error_code={e.rc}"
+            )
             _logger.error(details)
-            raise ConnectionError(details) from None
+            raise RuntimeError(details) from e
         except aiomqtt.MqttError as e:
-            details = str(e)
+            details = (
+                f"Publish to topic={topic!r} with "
+                f"qos={qos.value} [{qos.name}] timed out"
+            )
             _logger.error(details)
-            raise TimeoutError(details) from None
+            raise TimeoutError(details) from e
+
+        details = "Published to topic=%r with qos=%d [%s], retain=%r: %r"
+        _logger.debug(details, topic, qos.value, qos.name, retain, payload)
 
     async def subscribe(  # type: ignore [override]
         self,
@@ -140,7 +148,7 @@ class Client(aiomqtt.Client):
 
         Raises
         ------
-        ConnectionError
+        RuntimeError
             If the subscription fails.
         TimeoutError
             If the subscription times out.
@@ -157,13 +165,69 @@ class Client(aiomqtt.Client):
                 timeout=timeout,
             )
         except aiomqtt.MqttCodeError as e:
-            details = str(e)
+            details = (
+                f"Subscribe to topic={topic!r} with "
+                f"qos={qos.value} [{qos.name}] failed with "
+                f"error_code={e.rc}"
+            )
             _logger.error(details)
-            raise ConnectionError(details) from None
+            raise RuntimeError(details) from e
         except aiomqtt.MqttError as e:
-            details = str(e)
+            details = (
+                f"Subscribe to topic={topic!r} with "
+                f"qos={qos.value} [{qos.name}] timed out"
+            )
             _logger.error(details)
-            raise TimeoutError(details) from None
+            raise TimeoutError(details) from e
+
+        details = "Subscribed to topic=%r with qos=%d [%s]"
+        _logger.debug(details, topic, qos.value, qos.name)
+
+    async def unsubscribe(  # type: ignore [override]
+        self,
+        topic: str,
+        *,
+        properties: Properties | None = None,
+        timeout: float | None = None,
+    ) -> None:
+        """Unsubscribe from a topic on the MQTT broker.
+
+        Parameters
+        ----------
+        topic
+            Topic to unsubscribe from.
+        properties
+            Properties to include with the unsubscription.
+        timeout
+            Time to wait for the unsubscription to finish in seconds.
+            `None` will wait indefinitely.
+
+        Raises
+        ------
+        RuntimeError
+            If the unsubscription fails.
+        TimeoutError
+            If the unsubscription times out.
+        """
+        # `aiomqtt` uses `math.inf` instead of `None` to wait indefinitely.
+        if timeout is None:
+            timeout = math.inf
+
+        try:
+            await super().unsubscribe(topic, properties, timeout=timeout)
+        except aiomqtt.MqttCodeError as e:
+            details = (
+                f"Unsubscribe from topic={topic!r} failed with "
+                f"error_code={e.rc}"
+            )
+            _logger.error(details)
+            raise RuntimeError(details) from e
+        except aiomqtt.MqttError as e:
+            details = f"Unsubscribe from topic={topic!r} timed out"
+            _logger.error(details)
+            raise TimeoutError(details) from e
+
+        _logger.debug("Unsubscribed topic=%r", topic)
 
     async def request[T: Packet](  # noqa: PLR0913
         self,
@@ -211,17 +275,33 @@ class Client(aiomqtt.Client):
         ------
         TimeoutError
             If the response times out.
+        ValueError
+            If the properties are invalid.
 
         Returns
         -------
         Packet
             Response packet.
         """
-        if sub_properties is None:
-            sub_properties = Properties(PacketTypes.SUBSCRIBE)  # type: ignore [no-untyped-call]
-
         if pub_properties is None:
             pub_properties = Properties(PacketTypes.PUBLISH)  # type: ignore [no-untyped-call]
+
+        if pub_properties.packetType != PacketTypes.PUBLISH:
+            details = (
+                f"Publish properties must have packet type "
+                f"{PacketTypes.PUBLISH} [PUBLISH] not "
+                f"{pub_properties.packetType}"
+            )
+            _logger.error(details)
+            raise ValueError(details)
+
+        if getattr(pub_properties, "ResponseTopic", None) is not None:
+            details = (
+                "Setting the response topic on publish properties is "
+                "not permitted"
+            )
+            _logger.error(details)
+            raise ValueError(details)
 
         # Create a unique topic for the request to identify the response.
         response_topic = f"{self._response_topic_prefix}/{uuid.uuid4()}"
@@ -235,13 +315,6 @@ class Client(aiomqtt.Client):
         # Set the correlation-data as a property for the request.
         pub_properties.CorrelationData = correlation_data
 
-        _logger.debug(
-            "#request: subscribe to topic %r with qos=%d (%s)",
-            response_topic,
-            qos.value,
-            qos.name,
-        )
-
         # Subscribe to the response-topic before publishing to not miss
         # the response.
         await self.subscribe(
@@ -251,127 +324,57 @@ class Client(aiomqtt.Client):
             timeout=sub_timeout,
         )
 
-        _logger.debug(
-            "#request: publish to topic %r with qos=%d (%s): %r",
-            topic,
-            qos.value,
-            qos.name,
-            packet,
-        )
-
-        await self.publish(
-            topic,
-            packet,
-            qos=qos,
-            retain=retain,
-            properties=pub_properties,
-            timeout=pub_timeout,
-        )
-
-        _logger.debug(
-            "#request: await response on topic %r with timeout=%r",
-            response_topic,
-            response_timeout,
-        )
-
         try:
+            await self.publish(
+                topic,
+                packet,
+                qos=qos,
+                retain=retain,
+                properties=pub_properties,
+                timeout=pub_timeout,
+            )
+
             async with asyncio.timeout(response_timeout):
-                response = await self.__response(
+                return await self.__response(
                     response_topic,
                     correlation_data,
                     response_type,
                 )
-                _logger.debug("#request: got response on %r", response_topic)
-                return response
         except TimeoutError:
-            _logger.error(
-                "#request: response on topic %r timed out",
-                response_topic,
-            )
+            _logger.error("Response on topic=%r timed out", response_topic)
             raise
 
-    async def __response[T: Packet](
+        finally:
+            await self.unsubscribe(response_topic)
+
+    async def __response[T: Packet](  # type: ignore [return]
         self,
         response_topic: str,
         correlation_data: bytes,
         response_type: type[T],
     ) -> T:
-        collisions = 0
         try:
             async for message in self.messages:
-                if message.topic.matches(response_topic):
-                    message_correlation_data = getattr(
+                if (
+                    message.topic.matches(response_topic)
+                    and
+                    verify_correlation_data(
                         message.properties,
-                        "CorrelationData",
-                        None,
+                        correlation_data,
                     )
-                    if message_correlation_data is None:
+                ):
+                    payload = message.payload
+                    if not isinstance(payload, bytes):
                         details = (
-                            "#request: invalid response on topic %r: "
-                            "no correlation data - ignore (hacking attempt?)"
-                        )
-                        _logger.warning(details, response_topic)
-                        continue
-
-                    if message_correlation_data != correlation_data:
-                        # Probably a response-topic collision, which is
-                        # unlikely, but possible => put the message back
-                        _logger.debug(
-                            "#request: response collision on %r",
-                            response_topic,
-                        )
-
-                        await self._queue.put(message)
-
-                        if collisions > _MAX_COLLISIONS:
-                            details = (
-                                f"#request: too many collisions for "
-                                f"response-topic {response_topic!r}"
-                            )
-                            _logger.error(details)
-                            raise ValueError(details)
-
-                        # Wait a bit to not overload the CPU if the message
-                        # is the only one in the queue.
-                        if self._queue.qsize() == 1:
-                            await asyncio.sleep(0.1)
-
-                        continue
-
-                    if not isinstance(message.payload, bytes):
-                        details = (
-                            f"#request: message payload has unimplemented "
-                            f"type {type(message.payload)}"
+                            f"Message payload has unimplemented type "
+                            f"{type(payload)} expected bytes"
                         )
                         _logger.error(details)
                         raise NotImplementedError(details)
 
-                    # Check for thrown errors
-                    message_user_properties = getattr(
-                        message.properties,
-                        "UserProperty",
-                        [],
-                    )
-                    with contextlib.suppress(StopIteration):
-                        error_user_property: tuple[str, str] = next(
-                            p
-                            for p in message_user_properties
-                            if p[0] == "error"
-                        )
+                    check_for_errors(message.properties, payload)
 
-                        _logger.debug(
-                            "#request: error occurred: %s",
-                            message.payload.decode(),
-                        )
-                        error_code_or_none = error_user_property[1]
-                        error_code = (
-                            int(error_code_or_none)
-                            if error_code_or_none != "None"
-                            else None
-                        )
-                        raise MQTTError(message.payload.decode(), error_code)
-
-                    return bytes_to_packet(message.payload, response_type)
+                    return bytes_to_packet(payload, response_type)
 
                 await self._queue.put(message)
 
@@ -381,11 +384,6 @@ class Client(aiomqtt.Client):
                     await asyncio.sleep(0.1)
 
         except aiomqtt.MqttError:
-            details = "#request: disconnected during response message iteration"
+            details = "Disconnected during response message iteration"
             _logger.error(details)
-
             raise ConnectionAbortedError(details) from None
-
-        details = f"#request: no response on topic {response_topic!r}"
-        _logger.error(details)
-        raise ValueError(details)
