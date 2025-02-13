@@ -233,8 +233,8 @@ class Client(aiomqtt.Client):
         self,
         topic: str,
         packet: Packet | None,
-        response_type: type[T],
         *,
+        response_type: type[T],
         qos: QoS = QoS.EXACTLY_ONCE,
         retain: bool = False,
         sub_properties: Properties | None = None,
@@ -253,6 +253,7 @@ class Client(aiomqtt.Client):
             Packet to send with the request.
         response_type
             Type of the response packet.
+            `types.NoneType` will only check for errors.
         qos
             Quality of service level.
         retain
@@ -351,8 +352,8 @@ class Client(aiomqtt.Client):
         self,
         topic: str,
         packet: Packet | None,
-        response_type: type[T],
         *,
+        response_type: type[T],
         qos: QoS = QoS.EXACTLY_ONCE,
         retain: bool = False,
         sub_properties: Properties | None = None,
@@ -371,6 +372,7 @@ class Client(aiomqtt.Client):
             Packet to send with the request.
         response_type
             Type of the response packet.
+            `types.NoneType` will only check for errors.
         qos
             Quality of service level.
         retain

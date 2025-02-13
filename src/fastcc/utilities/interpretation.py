@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import struct
+import types
 import typing
 
 if typing.TYPE_CHECKING:
@@ -43,5 +44,8 @@ def bytes_to_packet[T: Packet](payload: bytes, packet_type: type[T]) -> T:
         message.ParseFromString(payload)
         return message  # type: ignore [return-value]
 
-    details = f"packet type {packet_type} is not supported"
+    if packet_type is types.NoneType:
+        return None  # type: ignore [return-value]
+
+    details = f"Packet type {packet_type} is not supported"
     raise NotImplementedError(details)
