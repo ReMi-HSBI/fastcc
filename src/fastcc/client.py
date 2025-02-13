@@ -20,8 +20,7 @@ from paho.mqtt.properties import Properties
 from paho.mqtt.subscribeoptions import SubscribeOptions
 
 from fastcc.utilities.interpretation import bytes_to_packet
-from fastcc.utilities.mqtt import QoS
-from fastcc.utilities.security import check_for_errors, verify_correlation_data
+from fastcc.utilities.mqtt import QoS, check_error_code, verify_correlation_data
 
 _logger = logging.getLogger(__name__)
 
@@ -475,24 +474,13 @@ class Client(aiomqtt.Client):
     ) -> T:
         try:
             async for message in self.messages:
-                if message.topic.matches(
-                    response_topic
-                ) and verify_correlation_data(
-                    message.properties,
-                    correlation_data,
-                ):
-                    payload = message.payload
-                    if not isinstance(payload, bytes):
-                        details = (
-                            f"Message payload has unimplemented type "
-                            f"{type(payload)} expected bytes"
-                        )
-                        _logger.error(details)
-                        raise NotImplementedError(details)
+                payload = message.payload
+                assert isinstance(payload, bytes)  # noqa: S101
 
-                    check_for_errors(message.properties, payload)
-
-                    return bytes_to_packet(payload, response_type)
+                if message.topic.matches(response_topic):
+                    if verify_correlation_data(message, correlation_data):
+                        check_error_code(message)
+                        return bytes_to_packet(payload, response_type)
 
                 await self._queue.put(message)
 
@@ -514,27 +502,18 @@ class Client(aiomqtt.Client):
     ) -> AsyncIterator[T]:
         try:
             async for message in self.messages:
-                if message.topic.matches(
-                    response_topic
-                ) and verify_correlation_data(
-                    message.properties,
-                    correlation_data,
-                ):
-                    payload = message.payload
-                    if not isinstance(payload, bytes):
-                        details = (
-                            f"Message payload has unimplemented type "
-                            f"{type(payload)} expected bytes"
-                        )
-                        _logger.error(details)
-                        raise NotImplementedError(details)
+                payload = message.payload
+                assert isinstance(payload, bytes)  # noqa: S101
 
-                    check_for_errors(message.properties, payload)
+                if message.topic.matches(response_topic):
+                    if verify_correlation_data(message, correlation_data):
+                        check_error_code(message)
 
-                    if payload == b"":
-                        return
+                        if payload == b"":
+                            return
 
-                    yield bytes_to_packet(payload, response_type)
+                        yield bytes_to_packet(payload, response_type)
+                        continue
 
                 await self._queue.put(message)
 

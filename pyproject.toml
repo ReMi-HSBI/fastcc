@@ -142,6 +142,7 @@ ignore = [
     "TRY400",   # error-instead-of-exception (https://docs.astral.sh/ruff/rules/error-instead-of-exception)
     "COM812",   # missing-trailing-comma (https://docs.astral.sh/ruff/rules/missing-trailing-comma)
     "ASYNC109", # async-function-with-timeout (https://docs.astral.sh/ruff/rules/async-function-with-timeout)
+    "SIM102",   # collapsible-if (https://docs.astral.sh/ruff/rules/collapsible-if)
 ]
 
 [tool.ruff.lint.extend-per-file-ignores]

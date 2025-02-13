@@ -9,7 +9,7 @@ import typing
 if typing.TYPE_CHECKING:
     import aiomqtt
 
-    from fastcc.utilities.type_aliases import ExceptionHandler, Routable
+    from fastcc.utilities.type_aliases import ExceptionHandler
     from fastcc.utilities.type_definitions import Packet
 
 from google.protobuf.message import Message
@@ -19,8 +19,8 @@ from paho.mqtt.properties import Properties
 from fastcc.client import Client
 from fastcc.exceptions import MQTTError
 from fastcc.router import Router
-from fastcc.utilities import interpretation
-from fastcc.utilities.mqtt import QoS
+from fastcc.utilities.analyze import extract_route_kwargs
+from fastcc.utilities.mqtt import QoS, get_correlation_data, get_response_topic
 
 _logger = logging.getLogger(__name__)
 
@@ -128,18 +128,14 @@ class FastCC:
             raise ValueError(details)
 
         for route in routes:
-            kwargs = self.__get_route_parameters(route, payload)
-
-            response_topic = getattr(message.properties, "ResponseTopic", None)
-            correlation_data = getattr(
-                message.properties,
-                "CorrelationData",
-                None,
-            )
-
             properties = Properties(PacketTypes.PUBLISH)  # type: ignore [no-untyped-call]
+
+            correlation_data = get_correlation_data(message)
             if correlation_data is not None:
                 properties.CorrelationData = correlation_data
+
+            response_topic = get_response_topic(message)
+            kwargs = extract_route_kwargs(route, message, self._injectors)
 
             try:
                 if inspect.isasyncgenfunction(route):
@@ -189,43 +185,21 @@ class FastCC:
                     properties,
                 )
 
-    def __get_route_parameters(
-        self,
-        route: Routable,
-        payload: bytes,
-    ) -> dict[str, typing.Any]:
-        signature = inspect.signature(route, eval_str=True)
-        kwargs = {
-            key: value
-            for key, value in self._injectors.items()
-            if key in signature.parameters
-        }
-
-        packet_parameter = interpretation.get_packet_parameter(route)
-        if packet_parameter is not None:
-            packet = interpretation.bytes_to_packet(
-                payload,
-                packet_parameter.annotation,
-            )
-            kwargs[packet_parameter.name] = packet
-
-        return kwargs
-
     async def __send_response(
         self,
         response: Packet | None,
-        response_topic: str | None,
+        topic: str | None,
         qos: QoS,
         properties: Properties | None = None,
     ) -> None:
-        if response_topic is None:
+        if topic is None:
             return
 
         if isinstance(response, Message):
             response = response.SerializeToString()
 
         await self._client.publish(
-            response_topic,
+            topic,
             response,
             qos=qos,
             properties=properties,
