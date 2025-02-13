@@ -6,6 +6,7 @@ import inspect
 import logging
 import types
 import typing
+from collections.abc import AsyncIterator
 
 if typing.TYPE_CHECKING:
     from fastcc.utilities.type_aliases import Routable
@@ -35,7 +36,7 @@ def validate_route(routable: Routable) -> None:
         validate_route_first_parameter(p0)
 
     validate_keyword_only_parameters(parameters)
-    validate_return_type(signature.return_annotation)
+    validate_return_type(signature.return_annotation, routable)
 
 
 def validate_route_first_parameter(p0: inspect.Parameter) -> None:
@@ -113,13 +114,18 @@ def validate_keyword_only_parameters(
             raise ValueError(details)
 
 
-def validate_return_type(return_annotation: typing.Any) -> None:  # noqa: ANN401
+def validate_return_type(  # noqa: C901
+    return_annotation: typing.Any,  # noqa: ANN401
+    routable: Routable,
+) -> None:
     """Check if the return type is valid.
 
     Parameters
     ----------
     return_annotation
         Return type to validate.
+    routable
+        Routable to validate.
 
     Raises
     ------
@@ -136,16 +142,47 @@ def validate_return_type(return_annotation: typing.Any) -> None:  # noqa: ANN401
 
     if type(return_annotation) is types.UnionType:
         details = (
-            f"return value with type {types.UnionType} is not "
-            f"supported yet"
+            f"return value with type {types.UnionType} is not supported yet"
         )
         _logger.error(details)
         raise NotImplementedError(details)
 
-    try:
-        success = issubclass(return_annotation, Packet)
-    except TypeError:
+    if inspect.isasyncgenfunction(routable):
+        if return_annotation.__origin__ is not AsyncIterator:
+            details = (
+                "return value must be of type "
+                "collections.abc.AsyncIterator[Packet]"
+            )
+            _logger.error(details)
+            raise ValueError(details)
+
+        if len(return_annotation.__args__) != 1:
+            details = (
+                "return value must be of type "
+                "collections.abc.AsyncIterator[Packet]"
+            )
+            _logger.error(details)
+            raise ValueError(details)
+
+        return_annotation = return_annotation.__args__[0]
+        if return_annotation is Packet:
+            return
+
+        if type(return_annotation) is types.UnionType:
+            details = (
+                f"return value with type {types.UnionType} is not supported yet"
+            )
+
+        if issubclass(return_annotation, Packet):
+            return
+
         success = False
+
+    else:
+        try:
+            success = issubclass(return_annotation, Packet)
+        except TypeError:
+            success = False
 
     if not success:
         details = (

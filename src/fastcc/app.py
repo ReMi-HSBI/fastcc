@@ -9,7 +9,8 @@ import typing
 if typing.TYPE_CHECKING:
     import aiomqtt
 
-    from fastcc.utilities.type_aliases import ExceptionHandler
+    from fastcc.utilities.type_aliases import ExceptionHandler, Routable
+    from fastcc.utilities.type_definitions import Packet
 
 from google.protobuf.message import Message
 from paho.mqtt.packettypes import PacketTypes
@@ -48,12 +49,6 @@ class FastCC:
             for topic, data in self._router.routes.items():
                 for qos in data:
                     await self._client.subscribe(topic, qos=qos)
-                    _logger.info(
-                        "subscribe to topic %r with qos=%d (%s)",
-                        topic,
-                        qos.value,
-                        qos.name,
-                    )
 
             await self.__listen()
 
@@ -92,17 +87,17 @@ class FastCC:
         self._exception_handlers[exception_type] = handler
 
     async def __listen(self) -> None:
-        _logger.info("listen for incoming messages")
+        _logger.info("Listen for incoming messages")
         async for message in self._client.messages:
             await self.__handle(message)
 
-    async def __handle(self, message: aiomqtt.Message) -> None:  # noqa: C901
+    async def __handle(self, message: aiomqtt.Message) -> None:
         topic = message.topic.value
         qos = QoS(message.qos)
         payload = message.payload
 
         _logger.debug(
-            "handle message on topic %r with qos=%d (%s): %r",
+            "Handle message on topic %r with qos=%d (%s): %r",
             topic,
             qos.value,
             qos.name,
@@ -111,7 +106,7 @@ class FastCC:
 
         if not isinstance(payload, bytes):
             details = (
-                f"ignore message with unimplemented payload type "
+                f"Ignore message with unimplemented payload type "
                 f"{type(payload).__name__!r}"
             )
             _logger.error(details)
@@ -119,43 +114,59 @@ class FastCC:
 
         # This should never happen, but just in case - dev's make mistakes.
         if (routings := self._router.routes.get(topic)) is None:
-            details = f"routings not found for message on topic {topic!r}"
+            details = f"Routings not found for message on topic {topic!r}"
             _logger.error(details)
             raise ValueError(details)
 
         # This should also never happen, but just in case - dev's make mistakes.
         if (routes := routings.get(qos)) is None:
             details = (
-                f"routes not found for message on topic {topic!r} "
+                f"Routes not found for message on topic {topic!r} "
                 f"with qos={qos.value} ({qos.name})"
             )
             _logger.error(details)
             raise ValueError(details)
 
         for route in routes:
-            signature = inspect.signature(route, eval_str=True)
+            kwargs = self.__get_route_parameters(route, payload)
 
-            kwargs = {
-                key: value
-                for key, value in self._injectors.items()
-                if key in signature.parameters
-            }
-
-            packet_parameter = interpretation.get_packet_parameter(route)
-            if packet_parameter is not None:
-                packet = interpretation.bytes_to_packet(
-                    payload,
-                    packet_parameter.annotation,
-                )
-                kwargs[packet_parameter.name] = packet
+            response_topic = getattr(message.properties, "ResponseTopic", None)
+            correlation_data = getattr(
+                message.properties,
+                "CorrelationData",
+                None,
+            )
 
             properties = Properties(PacketTypes.PUBLISH)  # type: ignore [no-untyped-call]
+            if correlation_data is not None:
+                properties.CorrelationData = correlation_data
 
             try:
-                response = await route(**kwargs)
+                if inspect.isasyncgenfunction(route):
+                    async for response in route(**kwargs):
+                        await self.__send_response(
+                            response,
+                            response_topic,
+                            qos,
+                            properties,
+                        )
+                    await self.__send_response(
+                        None,
+                        response_topic,
+                        qos,
+                        properties,
+                    )
+                else:
+                    response = await route(**kwargs)  # type: ignore [misc]
+                    await self.__send_response(
+                        response,
+                        response_topic,
+                        qos,
+                        properties,
+                    )
             except Exception as error:  # noqa: BLE001
                 details = (
-                    "got %r while handling message on topic=%r with "
+                    "Got %r while handling message on topic=%r with "
                     "payload_length=%d"
                 )
                 _logger.debug(details, error, topic, len(payload))
@@ -171,32 +182,51 @@ class FastCC:
 
                 properties.UserProperty = [user_property]
 
-            response_topic = getattr(message.properties, "ResponseTopic", None)
-            if response_topic is None:
-                return
+                await self.__send_response(
+                    response,
+                    response_topic,
+                    qos,
+                    properties,
+                )
 
-            correlation_data = getattr(
-                message.properties,
-                "CorrelationData",
-                None,
+    def __get_route_parameters(
+        self,
+        route: Routable,
+        payload: bytes,
+    ) -> dict[str, typing.Any]:
+        signature = inspect.signature(route, eval_str=True)
+        kwargs = {
+            key: value
+            for key, value in self._injectors.items()
+            if key in signature.parameters
+        }
+
+        packet_parameter = interpretation.get_packet_parameter(route)
+        if packet_parameter is not None:
+            packet = interpretation.bytes_to_packet(
+                payload,
+                packet_parameter.annotation,
             )
-            if correlation_data is not None:
-                properties.CorrelationData = correlation_data
+            kwargs[packet_parameter.name] = packet
 
-            if isinstance(response, Message):
-                response = response.SerializeToString()
+        return kwargs
 
-            _logger.debug(
-                "publish response on topic %r with qos=%d (%s): %r",
-                response_topic,
-                qos.value,
-                qos.name,
-                response,
-            )
+    async def __send_response(
+        self,
+        response: Packet | None,
+        response_topic: str | None,
+        qos: QoS,
+        properties: Properties | None = None,
+    ) -> None:
+        if response_topic is None:
+            return
 
-            await self._client.publish(
-                response_topic,
-                response,
-                qos=qos,
-                properties=properties,
-            )
+        if isinstance(response, Message):
+            response = response.SerializeToString()
+
+        await self._client.publish(
+            response_topic,
+            response,
+            qos=qos,
+            properties=properties,
+        )

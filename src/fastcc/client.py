@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
 import math
 import typing
 import uuid
 
 if typing.TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
     from fastcc.utilities.type_definitions import Packet
 
 import aiomqtt
@@ -347,6 +348,125 @@ class Client(aiomqtt.Client):
         finally:
             await self.unsubscribe(response_topic)
 
+    async def stream[T: Packet](  # noqa: PLR0913
+        self,
+        topic: str,
+        packet: Packet | None,
+        response_type: type[T],
+        *,
+        qos: QoS = QoS.EXACTLY_ONCE,
+        retain: bool = False,
+        sub_properties: Properties | None = None,
+        sub_timeout: float | None = None,
+        pub_properties: Properties | None = None,
+        pub_timeout: float | None = None,
+        response_timeout: float | None = None,
+    ) -> AsyncIterator[T]:
+        """Request stream data from the MQTT broker.
+
+        Parameters
+        ----------
+        topic
+            Topic to publish the request to.
+        packet
+            Packet to send with the request.
+        response_type
+            Type of the response packet.
+        qos
+            Quality of service level.
+        retain
+            Whether the request should be retained.
+        sub_properties
+            Properties for the subscription.
+        sub_timeout
+            Time to wait for the subscription to finish in seconds.
+            `None` will wait indefinitely.
+        pub_properties
+            Properties for the publication.
+        pub_timeout
+            Time to wait for the publication to finish in seconds.
+            `None` will wait indefinitely.
+        response_timeout
+            Time to wait for the response in seconds.
+            `None` will wait indefinitely.
+
+        Raises
+        ------
+        TimeoutError
+            If the response times out.
+        ValueError
+            If the properties are invalid.
+
+        Yields
+        ------
+        Packet
+            Response packet.
+        """
+        if pub_properties is None:
+            pub_properties = Properties(PacketTypes.PUBLISH)  # type: ignore [no-untyped-call]
+
+        if pub_properties.packetType != PacketTypes.PUBLISH:
+            details = (
+                f"Publish properties must have packet type "
+                f"{PacketTypes.PUBLISH} [PUBLISH] not "
+                f"{pub_properties.packetType}"
+            )
+            _logger.error(details)
+            raise ValueError(details)
+
+        if getattr(pub_properties, "ResponseTopic", None) is not None:
+            details = (
+                "Setting the response topic on publish properties is "
+                "not permitted"
+            )
+            _logger.error(details)
+            raise ValueError(details)
+
+        # Create a unique topic for the request to identify the response.
+        response_topic = f"{self._response_topic_prefix}/{uuid.uuid4()}"
+
+        # Set the response-topic as a property for the request.
+        pub_properties.ResponseTopic = response_topic
+
+        # Create a unique correlation-data id to make the request more secure.
+        correlation_data = str(uuid.uuid4()).encode()
+
+        # Set the correlation-data as a property for the request.
+        pub_properties.CorrelationData = correlation_data
+
+        # Subscribe to the response-topic before publishing to not miss
+        # the response.
+        await self.subscribe(
+            response_topic,
+            qos=qos,
+            properties=sub_properties,
+            timeout=sub_timeout,
+        )
+
+        try:
+            await self.publish(
+                topic,
+                packet,
+                qos=qos,
+                retain=retain,
+                properties=pub_properties,
+                timeout=pub_timeout,
+            )
+
+            async with asyncio.timeout(response_timeout):
+                async for response in self.__stream_response(
+                    response_topic,
+                    correlation_data,
+                    response_type,
+                ):
+                    yield response
+        except TimeoutError:
+            _logger.error("Response on topic=%r timed out", response_topic)
+            raise
+
+        finally:
+            await self.unsubscribe(response_topic)
+
     async def __response[T: Packet](  # type: ignore [return]
         self,
         response_topic: str,
@@ -355,13 +475,11 @@ class Client(aiomqtt.Client):
     ) -> T:
         try:
             async for message in self.messages:
-                if (
-                    message.topic.matches(response_topic)
-                    and
-                    verify_correlation_data(
-                        message.properties,
-                        correlation_data,
-                    )
+                if message.topic.matches(
+                    response_topic
+                ) and verify_correlation_data(
+                    message.properties,
+                    correlation_data,
                 ):
                     payload = message.payload
                     if not isinstance(payload, bytes):
@@ -375,6 +493,48 @@ class Client(aiomqtt.Client):
                     check_for_errors(message.properties, payload)
 
                     return bytes_to_packet(payload, response_type)
+
+                await self._queue.put(message)
+
+                # Wait a bit to not overload the CPU if the message is
+                # the only one in the queue.
+                if self._queue.qsize() == 1:
+                    await asyncio.sleep(0.1)
+
+        except aiomqtt.MqttError:
+            details = "Disconnected during response message iteration"
+            _logger.error(details)
+            raise ConnectionAbortedError(details) from None
+
+    async def __stream_response[T: Packet](
+        self,
+        response_topic: str,
+        correlation_data: bytes,
+        response_type: type[T],
+    ) -> AsyncIterator[T]:
+        try:
+            async for message in self.messages:
+                if message.topic.matches(
+                    response_topic
+                ) and verify_correlation_data(
+                    message.properties,
+                    correlation_data,
+                ):
+                    payload = message.payload
+                    if not isinstance(payload, bytes):
+                        details = (
+                            f"Message payload has unimplemented type "
+                            f"{type(payload)} expected bytes"
+                        )
+                        _logger.error(details)
+                        raise NotImplementedError(details)
+
+                    check_for_errors(message.properties, payload)
+
+                    if payload == b"":
+                        return
+
+                    yield bytes_to_packet(payload, response_type)
 
                 await self._queue.put(message)
 
