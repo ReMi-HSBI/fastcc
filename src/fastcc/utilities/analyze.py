@@ -12,7 +12,6 @@ if typing.TYPE_CHECKING:
 
 from fastcc.utilities import constants
 from fastcc.utilities.interpretation import bytes_to_packet
-from fastcc.utilities.mqtt import get_user_properties, get_user_property
 
 
 def extract_route_kwargs(
@@ -50,15 +49,6 @@ def extract_route_kwargs(
 
     if constants.MESSAGE_INJECTOR_FIELD in parameters:
         kwargs[constants.MESSAGE_INJECTOR_FIELD] = message
-
-    if constants.CHUNK_SIZE_INJECTOR_FIELD in parameters:
-        if (user_properties := get_user_properties(message)) is not None:
-            chunk_size = get_user_property(
-                constants.CHUNK_SIZE_INJECTOR_FIELD,
-                user_properties,
-            )
-            if chunk_size is not None:
-                kwargs[constants.CHUNK_SIZE_INJECTOR_FIELD] = chunk_size
 
     if packet_parameter := find_packet_parameter(routable):
         packet = bytes_to_packet(message.payload, packet_parameter.annotation)
