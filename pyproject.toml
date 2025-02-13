@@ -10,7 +10,7 @@ build-backend = "setuptools.build_meta"
 ########################################################################
 [project]
 name = "fastcc"
-version = "4.0.1"
+version = "4.0.2"
 description = "Lightweight, efficient and developer-friendly framework for component communication"
 readme = "README.md"
 requires-python = ">=3.13"
