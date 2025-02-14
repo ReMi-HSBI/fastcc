@@ -19,6 +19,7 @@ from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 from paho.mqtt.subscribeoptions import SubscribeOptions
 
+from fastcc.utilities.constants import DEFAULT_RESPONSE_TIMEOUT
 from fastcc.utilities.interpretation import bytes_to_packet
 from fastcc.utilities.mqtt import QoS, check_error_code, verify_correlation_data
 
@@ -241,7 +242,7 @@ class Client(aiomqtt.Client):
         sub_timeout: float | None = None,
         pub_properties: Properties | None = None,
         pub_timeout: float | None = None,
-        response_timeout: float | None = None,
+        response_timeout: float = DEFAULT_RESPONSE_TIMEOUT,
     ) -> T:
         """Send a request to the MQTT broker.
 
@@ -335,6 +336,9 @@ class Client(aiomqtt.Client):
                 timeout=pub_timeout,
             )
 
+            details = "Awaiting response on topic=%r with timeout=%.1fs"
+            _logger.debug(details, response_topic, response_timeout)
+
             async with asyncio.timeout(response_timeout):
                 return await self.__response(
                     response_topic,
@@ -360,7 +364,7 @@ class Client(aiomqtt.Client):
         sub_timeout: float | None = None,
         pub_properties: Properties | None = None,
         pub_timeout: float | None = None,
-        response_timeout: float | None = None,
+        response_timeout: float = DEFAULT_RESPONSE_TIMEOUT,
     ) -> AsyncIterator[T]:
         """Request stream data from the MQTT broker.
 
@@ -453,6 +457,9 @@ class Client(aiomqtt.Client):
                 properties=pub_properties,
                 timeout=pub_timeout,
             )
+
+            details = "Awaiting response on topic=%r with timeout=%.1fs"
+            _logger.debug(details, response_topic, response_timeout)
 
             async with asyncio.timeout(response_timeout):
                 async for response in self.__stream_response(
