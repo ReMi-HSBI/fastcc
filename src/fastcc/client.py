@@ -19,7 +19,7 @@ from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 from paho.mqtt.subscribeoptions import SubscribeOptions
 
-from fastcc.utilities.constants import DEFAULT_RESPONSE_TIMEOUT
+from fastcc.utilities import constants
 from fastcc.utilities.interpretation import bytes_to_packet
 from fastcc.utilities.mqtt import QoS, check_error_code, verify_correlation_data
 
@@ -57,12 +57,12 @@ class Client(aiomqtt.Client):
     async def publish(  # type: ignore [override]  # noqa: PLR0913
         self,
         topic: str,
-        payload: Packet | None = None,
+        payload: Packet = None,
         *,
         qos: QoS = QoS.AT_MOST_ONCE,
         retain: bool = False,
         properties: Properties | None = None,
-        timeout: float | None = None,
+        timeout: float | None = constants.DEFAULT_PUBLISH_TIMEOUT,
     ) -> None:
         """Publish a message to the MQTT broker.
 
@@ -131,7 +131,7 @@ class Client(aiomqtt.Client):
         *,
         qos: QoS = QoS.AT_MOST_ONCE,
         properties: Properties | None = None,
-        timeout: float | None = None,
+        timeout: float | None = constants.DEFAULT_SUBSCRIBE_TIMEOUT,
     ) -> None:
         """Subscribe to a topic on the MQTT broker.
 
@@ -189,7 +189,7 @@ class Client(aiomqtt.Client):
         topic: str,
         *,
         properties: Properties | None = None,
-        timeout: float | None = None,
+        timeout: float | None = constants.DEFAULT_UNSUBSCRIBE_TIMEOUT,
     ) -> None:
         """Unsubscribe from a topic on the MQTT broker.
 
@@ -233,16 +233,18 @@ class Client(aiomqtt.Client):
     async def request[T: Packet](  # noqa: PLR0913
         self,
         topic: str,
-        packet: Packet | None,
+        packet: Packet,
         *,
         response_type: type[T],
         qos: QoS = QoS.EXACTLY_ONCE,
         retain: bool = False,
         sub_properties: Properties | None = None,
-        sub_timeout: float | None = None,
+        sub_timeout: float | None = constants.DEFAULT_SUBSCRIBE_TIMEOUT,
         pub_properties: Properties | None = None,
-        pub_timeout: float | None = None,
-        response_timeout: float = DEFAULT_RESPONSE_TIMEOUT,
+        pub_timeout: float | None = constants.DEFAULT_PUBLISH_TIMEOUT,
+        response_timeout: float | None = constants.DEFAULT_RESPONSE_TIMEOUT,
+        unsub_properties: Properties | None = None,
+        unsub_timeout: float | None = constants.DEFAULT_UNSUBSCRIBE_TIMEOUT,
     ) -> T:
         """Send a request to the MQTT broker.
 
@@ -271,6 +273,11 @@ class Client(aiomqtt.Client):
             `None` will wait indefinitely.
         response_timeout
             Time to wait for the response in seconds.
+            `None` will wait indefinitely.
+        unsub_properties
+            Properties for the unsubscription.
+        unsub_timeout
+            Time to wait for the unsubscription to finish in seconds.
             `None` will wait indefinitely.
 
         Raises
@@ -350,12 +357,16 @@ class Client(aiomqtt.Client):
             raise
 
         finally:
-            await self.unsubscribe(response_topic)
+            await self.unsubscribe(
+                response_topic,
+                properties=unsub_properties,
+                timeout=unsub_timeout,
+            )
 
     async def stream[T: Packet](  # noqa: PLR0913
         self,
         topic: str,
-        packet: Packet | None,
+        packet: Packet,
         *,
         response_type: type[T],
         qos: QoS = QoS.EXACTLY_ONCE,
@@ -364,7 +375,9 @@ class Client(aiomqtt.Client):
         sub_timeout: float | None = None,
         pub_properties: Properties | None = None,
         pub_timeout: float | None = None,
-        response_timeout: float = DEFAULT_RESPONSE_TIMEOUT,
+        response_timeout: float = constants.DEFAULT_RESPONSE_TIMEOUT,
+        unsub_properties: Properties | None = None,
+        unsub_timeout: float | None = constants.DEFAULT_UNSUBSCRIBE_TIMEOUT,
     ) -> AsyncIterator[T]:
         """Request stream data from the MQTT broker.
 
@@ -393,6 +406,11 @@ class Client(aiomqtt.Client):
             `None` will wait indefinitely.
         response_timeout
             Time to wait for the response in seconds.
+            `None` will wait indefinitely.
+        unsub_properties
+            Properties for the unsubscription.
+        unsub_timeout
+            Time to wait for the unsubscription to finish in seconds.
             `None` will wait indefinitely.
 
         Raises
@@ -473,7 +491,11 @@ class Client(aiomqtt.Client):
             raise
 
         finally:
-            await self.unsubscribe(response_topic)
+            await self.unsubscribe(
+                response_topic,
+                properties=unsub_properties,
+                timeout=unsub_timeout,
+            )
 
     async def __response[T: Packet](  # type: ignore [return]
         self,
