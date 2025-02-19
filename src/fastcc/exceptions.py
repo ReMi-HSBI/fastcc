@@ -1,7 +1,11 @@
 """Module containing the `MQTTError` exception class."""
 
 
-class MQTTError(Exception):
+class FastCCError(Exception):
+    """Base exception of FastCC."""
+
+
+class MQTTError(FastCCError):
     """Exception class for communicating errors over MQTT."""
 
     def __init__(self, message: str, error_code: int | None = None) -> None:

@@ -19,6 +19,7 @@ from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 from paho.mqtt.subscribeoptions import SubscribeOptions
 
+from fastcc.exceptions import FastCCError
 from fastcc.utilities import constants
 from fastcc.utilities.interpretation import bytes_to_packet
 from fastcc.utilities.mqtt import QoS, check_error_code, verify_correlation_data
@@ -51,6 +52,9 @@ class Client(aiomqtt.Client):
 
         # Ensure that the MQTT client uses the MQTT v5 protocol.
         kwargs.update({"protocol": aiomqtt.ProtocolVersion.V5})
+
+        if "identifier" not in kwargs:
+            kwargs["identifier"] = b""
 
         super().__init__(*args, **kwargs)
 
@@ -85,7 +89,7 @@ class Client(aiomqtt.Client):
 
         Raises
         ------
-        RuntimeError
+        FastCCError
             If the publication fails.
         TimeoutError
             If the publication times out.
@@ -113,7 +117,7 @@ class Client(aiomqtt.Client):
                 f"error_code={e.rc}"
             )
             _logger.error(details)
-            raise RuntimeError(details) from e
+            raise FastCCError(details) from e
         except aiomqtt.MqttError as e:
             details = (
                 f"Publish to topic={topic!r} with "
@@ -131,6 +135,7 @@ class Client(aiomqtt.Client):
         *,
         qos: QoS = QoS.AT_MOST_ONCE,
         properties: Properties | None = None,
+        options: SubscribeOptions | None = None,
         timeout: float | None = constants.DEFAULT_SUBSCRIBE_TIMEOUT,
     ) -> None:
         """Subscribe to a topic on the MQTT broker.
@@ -149,7 +154,7 @@ class Client(aiomqtt.Client):
 
         Raises
         ------
-        RuntimeError
+        FastCCError
             If the subscription fails.
         TimeoutError
             If the subscription times out.
@@ -158,10 +163,15 @@ class Client(aiomqtt.Client):
         if timeout is None:
             timeout = math.inf
 
+        if options is None:
+            options = SubscribeOptions(qos=qos.value)
+        else:
+            options.QoS = qos.value
+
         try:
             await super().subscribe(
                 topic,
-                options=SubscribeOptions(qos=qos.value),
+                options=options,
                 properties=properties,
                 timeout=timeout,
             )
@@ -172,7 +182,7 @@ class Client(aiomqtt.Client):
                 f"error_code={e.rc}"
             )
             _logger.error(details)
-            raise RuntimeError(details) from e
+            raise FastCCError(details) from e
         except aiomqtt.MqttError as e:
             details = (
                 f"Subscribe to topic={topic!r} with "
@@ -205,7 +215,7 @@ class Client(aiomqtt.Client):
 
         Raises
         ------
-        RuntimeError
+        FastCCError
             If the unsubscription fails.
         TimeoutError
             If the unsubscription times out.
@@ -222,7 +232,7 @@ class Client(aiomqtt.Client):
                 f"error_code={e.rc}"
             )
             _logger.error(details)
-            raise RuntimeError(details) from e
+            raise FastCCError(details) from e
         except aiomqtt.MqttError as e:
             details = f"Unsubscribe from topic={topic!r} timed out"
             _logger.error(details)
@@ -520,10 +530,10 @@ class Client(aiomqtt.Client):
                 if self._queue.qsize() == 1:
                     await asyncio.sleep(0.1)
 
-        except aiomqtt.MqttError:
+        except aiomqtt.MqttError as e:
             details = "Disconnected during response message iteration"
             _logger.error(details)
-            raise ConnectionAbortedError(details) from None
+            raise FastCCError(details) from e
 
     async def __stream_response[T: Packet](
         self,
@@ -553,7 +563,7 @@ class Client(aiomqtt.Client):
                 if self._queue.qsize() == 1:
                     await asyncio.sleep(0.1)
 
-        except aiomqtt.MqttError:
+        except aiomqtt.MqttError as e:
             details = "Disconnected during response message iteration"
             _logger.error(details)
-            raise ConnectionAbortedError(details) from None
+            raise FastCCError(details) from e
