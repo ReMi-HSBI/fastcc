@@ -1,17 +1,22 @@
 {
-  "markdownlint.config": {
-    "default": true,
-    "MD033": false,
-    "MD041": false
-  },
-  "[python]": {
-    "editor.defaultFormatter": "charliermarsh.ruff"
-  },
-  "ruff.nativeServer": true,
-  "ruff.configuration": "pyproject.toml",
-  "mypy-type-checker.importStrategy": "fromEnvironment",
-  "mypy-type-checker.reportingScope": "workspace",
-  "mypy-type-checker.args": [
-    "--config-file=pyproject.toml"
-  ]
+    "[python][toml][ignore][markdown][restructuredtext]": {
+        "editor.rulers": [
+            // PEP 8
+            // https://peps.python.org/pep-0008/#maximum-line-length
+            {
+                "column": 72,
+                "color": "#7e7e7e40"
+            },
+            {
+                "column": 79,
+                "color": "#ff000080"
+            }
+        ],
+        "editor.defaultFormatter": "charliermarsh.ruff"
+    },
+    "markdownlint.config": {
+        "default": true,
+        "MD033": false,
+        "MD041": false
+    }
 }

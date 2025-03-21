@@ -1,12 +1,10 @@
 {
-  "recommendations": [
-    "DavidAnson.vscode-markdownlint",
-    "shd101wyy.markdown-preview-enhanced",
-    "tamasfe.even-better-toml",
-    "ms-python.python",
-    "charliermarsh.ruff",
-    "ms-python.mypy-type-checker",
-    "zxh404.vscode-proto3"
-  ]
+    "recommendations": [
+        "ms-python.python",
+        "charliermarsh.ruff",
+        "ms-python.mypy-type-checker",
+        "tamasfe.even-better-toml",
+        "DavidAnson.vscode-markdownlint",
+        "zxh404.vscode-proto3"
+    ]
 }
-  
