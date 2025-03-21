@@ -1,6 +1,6 @@
 src = ["src", "tests"]
 cache-dir = ".cache/ruff"
-line-length = 79
+line-length = 80
 preview = true
 
 [format]
@@ -68,6 +68,12 @@ select = [
     "FURB",     # refurb (https://docs.astral.sh/ruff/rules/#refurb-furb)
     "DOC",      # pydoclint (https://docs.astral.sh/ruff/rules/#pydoclint-doc)
     "RUF",      # ruff-specific-rules (https://docs.astral.sh/ruff/rules/#ruff-specific-rules-ruf)
+]
+ignore = [
+    "ASYNC109", # async-function-with-timeout (https://docs.astral.sh/ruff/rules/async-function-with-timeout)
+    "TRY400",   # error-instead-of-exception (https://docs.astral.sh/ruff/rules/error-instead-of-exception)
+    "SIM102",   # collapsible-if (https://docs.astral.sh/ruff/rules/collapsible-if)
+    "ANN401",   # any-type (https://docs.astral.sh/ruff/rules/any-type)
 ]
 
 [lint.extend-per-file-ignores]

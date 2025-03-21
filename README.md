@@ -27,10 +27,10 @@
     />
 </a>
 
-FastCC is a high-performance [Python](https://www.python.org) package
-that simplifies [MQTT](https://mqtt.org) communication using decorators.
-With its intuitive `@route` system, developers can quickly define MQTT
-message handlers without boilerplate code. FastCC natively supports
+FastCC is a [Python](https://www.python.org) package that simplifies
+[MQTT](https://mqtt.org) communication using decorators. With its
+intuitive `@route` system, developers can quickly define MQTT message
+handlers without boilerplate code. FastCC natively supports
 [Protocol Buffers](https://protobuf.dev) :boom:, automatically handling
 serialization to byte format for efficient and structured data exchange.
 

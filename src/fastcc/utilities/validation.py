@@ -115,7 +115,7 @@ def validate_keyword_only_parameters(
 
 
 def validate_return_type(  # noqa: C901
-    return_annotation: typing.Any,  # noqa: ANN401
+    return_annotation: typing.Any,
     routable: Routable,
 ) -> None:
     """Check if the return type is valid.

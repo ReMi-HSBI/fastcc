@@ -32,7 +32,7 @@ class QoS(enum.IntEnum):
 def get_message_property(
     message: aiomqtt.Message,
     property_name: str,
-) -> typing.Any | None:  # noqa: ANN401
+) -> typing.Any | None:
     """Get a property of a message.
 
     Parameters

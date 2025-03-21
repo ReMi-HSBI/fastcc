@@ -36,7 +36,7 @@ class FastCC:
         Keyword arguments to pass to the MQTT client.
     """
 
-    def __init__(self, *args: typing.Any, **kwargs: typing.Any) -> None:  # noqa: ANN401
+    def __init__(self, *args: typing.Any, **kwargs: typing.Any) -> None:
         self._client = Client(*args, **kwargs)
         self._router = Router()
         self._injectors: dict[str, typing.Any] = {}
@@ -62,7 +62,7 @@ class FastCC:
         """
         self._router.add_router(router)
 
-    def add_injector(self, **kwargs: typing.Any) -> None:  # noqa: ANN401
+    def add_injector(self, **kwargs: typing.Any) -> None:
         """Add injector variables to the app.
 
         Injector variables are passed to the routables as keyword

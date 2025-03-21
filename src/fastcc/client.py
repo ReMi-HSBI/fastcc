@@ -22,7 +22,11 @@ from paho.mqtt.subscribeoptions import SubscribeOptions
 from fastcc.exceptions import FastCCError
 from fastcc.utilities import constants
 from fastcc.utilities.interpretation import bytes_to_packet
-from fastcc.utilities.mqtt import QoS, check_error_code, verify_correlation_data
+from fastcc.utilities.mqtt import (
+    QoS,
+    check_error_code,
+    verify_correlation_data,
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -44,9 +48,9 @@ class Client(aiomqtt.Client):
 
     def __init__(
         self,
-        *args: typing.Any,  # noqa: ANN401
+        *args: typing.Any,
         response_topic_prefix: str = "fastcc/responses",
-        **kwargs: typing.Any,  # noqa: ANN401
+        **kwargs: typing.Any,
     ) -> None:
         self._response_topic_prefix = response_topic_prefix.rstrip("/")
 
