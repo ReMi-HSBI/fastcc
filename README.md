@@ -40,3 +40,7 @@ serialization to byte format for efficient and structured data exchange.
 
 This project is built on top of [aiomqtt](https://github.com/empicano/aiomqtt)
 which itself is built on top of [paho-mqtt](https://eclipse.dev/paho).
+
+# Usage
+
+Please have a look on the `examples` directory.
