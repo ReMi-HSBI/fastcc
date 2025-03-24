@@ -7,7 +7,7 @@ import contextlib
 import logging
 import os
 import sys
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator  # noqa: TC003
 
 import fastcc
 
