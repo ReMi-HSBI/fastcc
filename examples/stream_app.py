@@ -51,7 +51,7 @@ async def main() -> None:
     logging.basicConfig(level=logging.DEBUG)
 
     database: dict[str, int] = {"Alice": 0, "Bob": 0}
-    app = fastcc.FastCC("localhost")
+    app = fastcc.FastCC("test.mosquitto.org")
     app.add_router(router)
     app.add_injector(database=database)
     app.add_exception_handler(

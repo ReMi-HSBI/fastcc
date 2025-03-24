@@ -17,7 +17,7 @@ async def main() -> None:
     """Run the app."""
     logging.basicConfig(level=logging.DEBUG)
 
-    async with fastcc.Client("localhost") as client:
+    async with fastcc.Client("test.mosquitto.org") as client:
         try:
             response = await client.request(
                 "greet",
