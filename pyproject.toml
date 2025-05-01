@@ -10,7 +10,7 @@ build-backend = "setuptools.build_meta"
 ########################################################################
 [project]
 name = "fastcc"
-version = "4.0.8"
+version = "4.0.9"
 description = """\
     Lightweight, efficient and developer-friendly framework for mqtt \
     communication.
@@ -31,17 +31,17 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "aiomqtt == 2.3.0",     # Asynchronous MQTT Client (https://github.com/empicano/aiomqtt)
-    "protobuf == 6.30.1",   # Data Serialization (https://github.com/protocolbuffers/protobuf)
+    "aiomqtt == 2.3.2",     # Asynchronous MQTT Client (https://github.com/empicano/aiomqtt)
+    "protobuf == 6.30.2",   # Data Serialization (https://github.com/protocolbuffers/protobuf)
 ]
 
 [project.optional-dependencies]
 dev = [
-    "ruff == 0.11.0",       # Linter & Formatter (https://pypi.org/project/ruff)
+    "ruff == 0.11.8",       # Linter & Formatter (https://pypi.org/project/ruff)
     "mypy == 1.15.0",       # Static Type Checker (https://pypi.org/project/mypy)
     "Sphinx == 8.2.3",      # Documentation Generator (https://pypi.org/project/Sphinx)
     "furo == 2024.8.6",     # Documentation Theme (https://pypi.org/project/furo)
-    "types-protobuf == 5.29.1.20250315",  # Protobuf Type Hints (https://pypi.org/project/types-protobuf)
+    "types-protobuf == 5.29.1.20250403",  # Protobuf Type Hints (https://pypi.org/project/types-protobuf)
 ]
 
 [project.urls]
