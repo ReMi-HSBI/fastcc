@@ -34,7 +34,7 @@ async def main() -> None:
 
 # https://github.com/empicano/aiomqtt?tab=readme-ov-file#note-for-windows-users
 if sys.platform.lower() == "win32" or os.name.lower() == "nt":
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())  # type: ignore[attr-defined]
 
 with contextlib.suppress(KeyboardInterrupt):
     asyncio.run(main())

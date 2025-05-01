@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import logging
 import typing
@@ -88,8 +89,9 @@ class FastCC:
 
     async def __listen(self) -> None:
         _logger.info("Listen for incoming messages")
-        async for message in self._client.messages:
-            await self.__handle(message)
+        async with asyncio.TaskGroup() as tg:
+            async for message in self._client.messages:
+                tg.create_task(self.__handle(message))
 
     async def __handle(self, message: aiomqtt.Message) -> None:
         topic = message.topic.value
