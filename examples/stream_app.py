@@ -51,20 +51,21 @@ async def main() -> None:
     logging.basicConfig(level=logging.DEBUG)
 
     database: dict[str, int] = {"Alice": 0, "Bob": 0}
-    app = fastcc.FastCC("test.mosquitto.org")
-    app.add_router(router)
-    app.add_injector(database=database)
-    app.add_exception_handler(
-        KeyError,
-        lambda e: fastcc.MQTTError(repr(e), 404),
-    )
+    async with fastcc.Client("test.mosquitto.org") as client:
+        app = fastcc.FastCC(client)
+        app.add_router(router)
+        app.add_injector(database=database)
+        app.add_exception_handler(
+            KeyError,
+            lambda e: fastcc.MQTTError(repr(e), 404),
+        )
 
-    await app.run()
+        await app.run()
 
 
 # https://github.com/empicano/aiomqtt?tab=readme-ov-file#note-for-windows-users
 if sys.platform.lower() == "win32" or os.name.lower() == "nt":
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())  # type: ignore[attr-defined]
 
 with contextlib.suppress(KeyboardInterrupt):
     asyncio.run(main())

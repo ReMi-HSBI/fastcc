@@ -31,34 +31,24 @@ class FastCC:
 
     Parameters
     ----------
-    args
-        Positional arguments to pass to the MQTT client.
-    kwargs
-        Keyword arguments to pass to the MQTT client.
+    client
+        Underlying MQTT client to use.
     """
 
-    def __init__(self, *args: typing.Any, **kwargs: typing.Any) -> None:
-        self._client = Client(*args, **kwargs)
+    def __init__(self, client: Client) -> None:
+        self._client = client
         self._router = Router()
         self._injectors: dict[str, typing.Any] = {}
         self._exception_handlers: dict[type[Exception], ExceptionHandler] = {}
         self._exception_handlers.setdefault(MQTTError, lambda e: e)  # type: ignore [return-value, arg-type]
 
-        self.add_injector(app=self)
-
-    @property
-    def client(self) -> Client:
-        """Return the underlying MQTT client."""
-        return self._client
-
     async def run(self) -> None:
         """Start the application."""
-        async with self._client:
-            for topic, data in self._router.routes.items():
-                for qos in data:
-                    await self._client.subscribe(topic, qos=qos)
+        for topic, data in self._router.routes.items():
+            for qos in data:
+                await self._client.subscribe(topic, qos=qos)
 
-            await self.__listen()
+        await self.__listen()
 
     def add_router(self, router: Router) -> None:
         """Add a router to the app.

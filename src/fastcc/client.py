@@ -38,8 +38,10 @@ class Client(aiomqtt.Client):
 
     Parameters
     ----------
-    args
-        Positional arguments to pass to the MQTT client.
+    hostname
+        Hostname of the MQTT broker.
+    port
+        Port of the MQTT broker.
     response_topic_prefix
         Prefix for the response topics.
     kwargs
@@ -48,7 +50,8 @@ class Client(aiomqtt.Client):
 
     def __init__(
         self,
-        *args: typing.Any,
+        hostname: str = "localhost",
+        port: int = 1883,
         response_topic_prefix: str = "fastcc/responses",
         **kwargs: typing.Any,
     ) -> None:
@@ -60,7 +63,7 @@ class Client(aiomqtt.Client):
         if "identifier" not in kwargs:
             kwargs["identifier"] = b""
 
-        super().__init__(*args, **kwargs)
+        super().__init__(hostname, port, **kwargs)
 
     async def publish(  # type: ignore [override]  # noqa: PLR0913
         self,
