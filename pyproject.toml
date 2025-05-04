@@ -10,7 +10,7 @@ build-backend = "setuptools.build_meta"
 ########################################################################
 [project]
 name = "fastcc"
-version = "4.1.0"
+version = "4.1.1"
 description = """\
     Lightweight, efficient and developer-friendly framework for mqtt \
     communication.
@@ -28,7 +28,7 @@ classifiers = [
     "Programming Language :: Python",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: Implementation :: CPython",
-    "Typing :: Typed",
+    "Typing :: Typed"
 ]
 dependencies = [
     "aiomqtt == 2.3.2",     # Asynchronous MQTT Client (https://github.com/empicano/aiomqtt)

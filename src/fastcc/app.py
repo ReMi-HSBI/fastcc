@@ -42,6 +42,11 @@ class FastCC:
         self._exception_handlers: dict[type[Exception], ExceptionHandler] = {}
         self._exception_handlers.setdefault(MQTTError, lambda e: e)  # type: ignore [return-value, arg-type]
 
+    @property
+    def client(self) -> Client:
+        """Return the underlying MQTT client."""
+        return self._client
+
     async def run(self) -> None:
         """Start the application."""
         for topic, data in self._router.routes.items():
