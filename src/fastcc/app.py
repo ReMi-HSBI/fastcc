@@ -44,6 +44,13 @@ class FastCC:
         self._exception_handlers: dict[type[Exception], ExceptionHandler] = {}
         self._exception_handlers.setdefault(MQTTError, lambda e: e)  # type: ignore [return-value, arg-type]
 
+        self.add_injector(app=self)
+
+    @property
+    def client(self) -> Client:
+        """Return the underlying MQTT client."""
+        return self._client
+
     async def run(self) -> None:
         """Start the application."""
         async with self._client:
