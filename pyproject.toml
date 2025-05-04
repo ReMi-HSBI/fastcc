@@ -10,7 +10,7 @@ build-backend = "setuptools.build_meta"
 ########################################################################
 [project]
 name = "fastcc"
-version = "4.0.9"
+version = "4.0.10"
 description = """\
     Lightweight, efficient and developer-friendly framework for mqtt \
     communication.
