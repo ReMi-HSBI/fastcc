@@ -2,3 +2,5 @@
 *.egg-info
 __pycache__
 .cache
+docs/src/_autosummary
+docs/build
