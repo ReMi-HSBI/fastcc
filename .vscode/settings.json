@@ -9,4 +9,5 @@
       "color": "#FF000044"
     }
   ],
+  "mypy-type-checker.importStrategy": "fromEnvironment",
 }

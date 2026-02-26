@@ -23,6 +23,15 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
     "Typing :: Typed",
 ]
+dependencies = [
+    "aiomqtt",  # Asynchronous MQTT Client (https://github.com/empicano/aiomqtt)
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff",           # Linter & Formatter (https://pypi.org/project/ruff)
+    "mypy",           # Static Type Checker (https://pypi.org/project/mypy)
+]
 
 [project.urls]
 Repository = "https://github.com/ReMi-HSBI/fastcc"
