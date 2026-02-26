@@ -1,9 +1,10 @@
 # FastCC
 
 FastCC is a lightweight, efficient and developer-friendly framework for
-MQTT communication written in [Python](https://www.python.org). It
-is built on top of the [aiomqtt](https://github.com/empicano/aiomqtt)
-library and extends it with the following functionalities:
+[MQTT](https://mqtt.org) communication written in
+[Python](https://www.python.org). It is built on top of the
+[aiomqtt](https://github.com/empicano/aiomqtt) library and extends it
+with the following functionalities:
 
 | Feature                          | Status      |
 | -------------------------------- | ----------- |
