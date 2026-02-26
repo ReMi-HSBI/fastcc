@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fastcc"
+version = "0.0.0"
+description = """\
+    Lightweight, efficient and developer-friendly framework for MQTT \
+    communication.
+"""
+readme = "README.md"
+requires-python = ">=3.14"
+authors = [{ name = "J. Baudisch", email = "justin.baudisch@hsbi.de" }]
+maintainers = [{ name = "J. Baudisch", email = "justin.baudisch@hsbi.de" }]
+keywords = ["mqtt", "iot", "aiomqtt", "asyncio"]
+classifiers = [
+    "Development Status :: 1 - Planning",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development",
+    "Topic :: Communications",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3.14",
+    "Typing :: Typed",
+]
+
+[project.urls]
+Repository = "https://github.com/ReMi-HSBI/fastcc"
+Issues = "https://github.com/ReMi-HSBI/fastcc/issues"
