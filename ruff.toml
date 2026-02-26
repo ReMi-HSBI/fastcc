@@ -73,6 +73,10 @@ select = [
     "RUF",  # https://docs.astral.sh/ruff/rules/#ruff-specific-rules-ruf
     "TRY",  # https://docs.astral.sh/ruff/rules/#tryceratops-try
 ]
+ignore = [
+    "ANN401",  # https://docs.astral.sh/ruff/rules/any-type
+    "D105",    # https://docs.astral.sh/ruff/rules/undocumented-magic-method
+]
 
 [lint.pydocstyle]
 convention = "numpy"
