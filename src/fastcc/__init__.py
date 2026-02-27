@@ -4,17 +4,17 @@ FastCC is a lightweight, efficient and developer-friendly framework for
 MQTT [1]_ communication. It is built on top of the **aiomqtt** [2]_
 library and extends it with the following functionalities:
 
-+----------------------------------+-----------+
-| Feature                          | Status    |
-+==================================+===========+
-| Routing                          | 📋Planned |
-+----------------------------------+-----------+
-| Custom payload encoding/decoding | 📋Planned |
-+----------------------------------+-----------+
-| Request/Response                 | 📋Planned |
-+----------------------------------+-----------+
-| Streaming                        | 📋Planned |
-+----------------------------------+-----------+
++----------------------------------+---------------+
+| Feature                          | Status        |
++==================================+===============+
+| Routing                          | 📋Planned     |
++----------------------------------+---------------+
+| Custom payload encoding/decoding | ✅Implemented |
++----------------------------------+---------------+
+| Request/Response                 | 📋Planned     |
++----------------------------------+---------------+
+| Streaming                        | 📋Planned     |
++----------------------------------+---------------+
 
 References
 ----------
@@ -23,5 +23,7 @@ References
 """
 
 from fastcc.client import Client
+from fastcc.codec import Codec, CodecRegistry
+from fastcc.serialization import default_registry
 
-__all__ = ["Client"]
+__all__ = ["Client", "Codec", "CodecRegistry", "default_registry"]

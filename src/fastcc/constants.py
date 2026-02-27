@@ -25,3 +25,6 @@ BOOL_FALSE_BYTE = b"\x00"
 
 BOOL_TRUE_BYTE = b"\x01"
 """Byte representation of the boolean value ``True`` in the custom serialization format."""  # noqa: E501
+
+MAX_CODEC_TAG = 0xFF
+"""Maximum allowed codec tag value (255) for FastCC serialization."""

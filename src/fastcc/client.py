@@ -11,7 +11,7 @@ import aiomqtt
 import paho.mqtt.properties as paho_properties
 import paho.mqtt.subscribeoptions as paho_subscribeoptions
 
-from fastcc.annotations import Packet
+from fastcc.codec import CodecRegistry
 from fastcc.constants import (
     DEFAULT_MESSAGING_TIMEOUT,
     DEFAULT_MQTT_HOST,
@@ -40,6 +40,8 @@ class Client:
         IP address or DNS name of the MQTT-Broker to connect to.
     port
         Port number of the MQTT-Broker to connect to.
+    codec_registry
+        Optional codec registry used for payload serialization.
     kwargs
         Additional keyword arguments passed to ``aiomqtt.Client``.
 
@@ -52,10 +54,12 @@ class Client:
         self,
         host: str = DEFAULT_MQTT_HOST,
         port: int = DEFAULT_MQTT_PORT,
+        codec_registry: CodecRegistry | None = None,
         **kwargs: typing.Any,
     ) -> None:
         self._host = host
         self._port = port
+        self._codec_registry = codec_registry
 
         # Ensure MQTTv5
         kwargs.update({"protocol": aiomqtt.ProtocolVersion.V5})
@@ -95,7 +99,7 @@ class Client:
     async def publish(  # noqa: PLR0913
         self,
         topic: str,
-        packet: Packet = None,
+        packet: typing.Any = None,
         *,
         qos: QoS = QoS.AT_LEAST_ONCE,
         retain: bool = False,
@@ -125,7 +129,7 @@ class Client:
         MessagingError
             If the publish operation fails or times out.
         """
-        serialized = serialize(packet)
+        serialized = serialize(packet, registry=self._codec_registry)
         try:
             # Use ``timeout=math.inf`` and rely on built-in timeout
             # handling using ``asyncio.timeout``.
