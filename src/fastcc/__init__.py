@@ -22,8 +22,17 @@ References
 .. [2] https://github.com/empicano/aiomqtt
 """
 
+from fastcc.app import Application
 from fastcc.client import Client
 from fastcc.codec import Codec, CodecRegistry
+from fastcc.router import Router
 from fastcc.serialization import default_registry
 
-__all__ = ["Client", "Codec", "CodecRegistry", "default_registry"]
+__all__ = [
+    "Application",
+    "Client",
+    "Codec",
+    "CodecRegistry",
+    "Router",
+    "default_registry",
+]

@@ -4,3 +4,4 @@ __pycache__
 .cache
 docs/src/_autosummary
 docs/build
+/*.py

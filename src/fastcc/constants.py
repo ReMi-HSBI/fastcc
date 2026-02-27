@@ -28,3 +28,15 @@ BOOL_TRUE_BYTE = b"\x01"
 
 MAX_CODEC_TAG = 0xFF
 """Maximum allowed codec tag value (255) for FastCC serialization."""
+
+TOPIC_SEPARATOR: typing.Final[str] = "/"
+"""Separator used in MQTT topics."""
+
+SINGLE_LEVEL_WILDCARD: typing.Final[str] = "+"
+"""Wildcard character used in MQTT topics to match exactly one level."""
+
+MULTI_LEVEL_WILDCARD: typing.Final[str] = "#"
+"""Wildcard character used in MQTT topics to match any number of levels."""
+
+WILDCARD_PARAMETER_NAME: typing.Final[str] = "wildcard"
+"""Name of the parameter used to capture wildcard segments in route handlers."""
