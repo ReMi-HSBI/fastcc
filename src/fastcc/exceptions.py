@@ -2,7 +2,7 @@
 
 import typing
 
-__all__ = ["FastCCError"]
+__all__ = ["FastCCError", "MessagingError", "SerializationError"]
 
 
 class FastCCError(Exception):
