@@ -1,9 +1,6 @@
 """Module defining exceptions raised across the codebase."""
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    import typing
+import typing
 
 __all__ = ["FastCCError"]
 
@@ -20,3 +17,11 @@ class FastCCError(Exception):
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}({str(self)!r})"
+
+
+class SerializationError(FastCCError):
+    """Exception raised when serialization or deserialization fails."""
+
+
+class MessagingError(FastCCError):
+    """Exception raised when messaging operations (publish, subscribe, etc.) fail."""  # noqa: E501
