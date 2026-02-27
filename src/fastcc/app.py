@@ -86,7 +86,7 @@ class Application(Client):
             If any registered route requires an injector that is not provided by the application.
         """  # noqa: E501
         for route in self._router.routes:
-            missing = route.expected_injector_names - self._injectors.keys()
+            missing = route.injector_parameters - self._injectors.keys()
             if missing:
                 names = ", ".join(missing)
                 error_message = (
@@ -111,13 +111,18 @@ class Application(Client):
         """Listen for incoming messages and dispatch them to the appropriate route handlers."""  # noqa: E501
         async for message in self._client.messages:
             packet = deserialize(message.payload, registry=self._codec_registry)
-            response = await self._router.dispatch(
-                message.topic.value,
-                packet,
-                **self._injectors,
-            )
+
+            try:
+                response = await self._router.dispatch(
+                    message.topic.value,
+                    packet,
+                    **self._injectors,
+                )
+            except Exception as e:
+                raise
+
+            print(response)
 
             if response is None:
                 continue
 
-            print(response)

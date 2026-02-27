@@ -25,3 +25,7 @@ class SerializationError(FastCCError):
 
 class MessagingError(FastCCError):
     """Exception raised when messaging operations (publish, subscribe, etc.) fail."""  # noqa: E501
+
+
+class RouteValidationError(FastCCError):
+    """Exception raised when route validation fails."""

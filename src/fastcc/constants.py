@@ -1,6 +1,7 @@
 """Module defining immutable values used across the codebase."""
 
 import datetime
+import re
 import typing
 
 DEFAULT_MQTT_HOST: typing.Final[str] = "127.0.0.1"
@@ -40,3 +41,6 @@ MULTI_LEVEL_WILDCARD: typing.Final[str] = "#"
 
 WILDCARD_PARAMETER_NAME: typing.Final[str] = "wildcard"
 """Name of the parameter used to capture wildcard segments in route handlers."""
+
+PATH_PARAMETER_PATTERN: typing.Final[re.Pattern[str]] = re.compile(r"\{(\w+)\}")
+"""Regular expression pattern for extracting path parameters from topic patterns."""  # noqa: E501

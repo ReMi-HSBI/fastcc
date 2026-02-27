@@ -3,24 +3,29 @@
 import dataclasses
 import datetime
 import inspect
+import logging
 import re
 import typing
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 
 import paho.mqtt.properties as paho_properties
 import paho.mqtt.subscribeoptions as paho_subscribeoptions
 
+from fastcc.annotations import AnyCallable, RouteHandler
 from fastcc.constants import (
     MULTI_LEVEL_WILDCARD,
+    PATH_PARAMETER_PATTERN,
     SINGLE_LEVEL_WILDCARD,
     TOPIC_SEPARATOR,
     WILDCARD_PARAMETER_NAME,
 )
-from fastcc.exceptions import FastCCError
+from fastcc.exceptions import RouteValidationError
 from fastcc.qos import QoS
 
 __all__ = ["Router"]
-type _RouteHandler = Callable[..., Awaitable[typing.Any]]
+
+
+_logger = logging.getLogger(__name__)
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -28,7 +33,7 @@ class _Route:
     """Route metadata."""
 
     topic_pattern: str
-    handler: _RouteHandler
+    handler: RouteHandler
 
     topic: str = dataclasses.field(init=False)
     regex: re.Pattern[str] = dataclasses.field(init=False)
@@ -39,6 +44,10 @@ class _Route:
     options: paho_subscribeoptions.SubscribeOptions | None
     properties: paho_properties.Properties | None
     timeout: datetime.timedelta | None
+
+    packet_parameter: str | None = dataclasses.field(init=False)
+    path_parameters: frozenset[str] = dataclasses.field(init=False)
+    injector_parameters: frozenset[str] = dataclasses.field(init=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -51,39 +60,47 @@ class _Route:
             "regex",
             _compile_topic_pattern(self.topic_pattern),
         )
+        object.__setattr__(
+            self,
+            "path_parameters",
+            frozenset(self.regex.groupindex.keys()),
+        )
+        object.__setattr__(
+            self,
+            "injector_parameters",
+            frozenset(self._get_injector_parameters()),
+        )
+        object.__setattr__(
+            self,
+            "packet_parameter",
+            self._get_packet_parameter(),
+        )
 
-        _validate_handler(self, self.handler)
-
-    @property
-    def expected_packet_parameter_name(self) -> str | None:
-        """Name of the expected packet parameter for this route, or ``None`` if not expected."""  # noqa: E501
-        signature = inspect.signature(self.handler)
-        for parameter in signature.parameters.values():
-            if (
-                parameter.kind
-                in {
-                    parameter.POSITIONAL_OR_KEYWORD,
-                    parameter.KEYWORD_ONLY,
-                }
-                and parameter.name not in self.expected_path_parameter_names
-            ):
-                return parameter.name
-        return None
-
-    @property
-    def expected_path_parameter_names(self) -> set[str]:
-        """Set of expected path parameter names for this route."""
-        return set(self.regex.groupindex.keys())
-
-    @property
-    def expected_injector_names(self) -> set[str]:
-        """Set of expected injector names for this route."""
+    def _get_injector_parameters(self) -> set[str]:
         signature = inspect.signature(self.handler)
         return {
             p.name
             for p in signature.parameters.values()
             if p.kind == p.KEYWORD_ONLY
-        } - self.expected_path_parameter_names
+        } - self.path_parameters
+
+    def _get_packet_parameter(self) -> str | None:
+        signature = inspect.signature(self.handler)
+        packet_parameters: list[str] = [
+            p.name
+            for p in signature.parameters.values()
+            if p.kind
+            in {
+                p.POSITIONAL_OR_KEYWORD,
+                p.KEYWORD_ONLY,
+            }
+            and p.name not in self.path_parameters
+        ]
+        if not packet_parameters:
+            return None
+
+        assert len(packet_parameters) == 1  # noqa: S101
+        return packet_parameters[0]
 
 
 class Router:
@@ -115,7 +132,7 @@ class Router:
         options: paho_subscribeoptions.SubscribeOptions | None = None,
         properties: paho_properties.Properties | None = None,
         timeout: datetime.timedelta | None = None,
-    ) -> Callable[[_RouteHandler], _RouteHandler]:
+    ) -> Callable[[AnyCallable], RouteHandler]:
         """Register a handler for ``topic_pattern`` via decorator.
 
         Parameters
@@ -134,12 +151,14 @@ class Router:
 
         Returns
         -------
-        typing.Callable[[_RouteHandler], _RouteHandler]
+        typing.Callable[[AnyCallable], RouteHandler]
             Decorator registering the decorated handler in this router.
         """
         full_pattern = TOPIC_SEPARATOR.join((self._prefix, topic_pattern))
+        _validate_topic_pattern(full_pattern)
 
-        def decorator(handler: _RouteHandler) -> _RouteHandler:
+        def decorator(handler: AnyCallable) -> RouteHandler:
+            _validate_route_handler(handler, full_pattern)
             route = _Route(
                 topic_pattern=full_pattern,
                 handler=handler,
@@ -182,15 +201,15 @@ class Router:
                 continue
 
             arguments: dict[str, typing.Any] = {}
-            for parameter_name in route.expected_path_parameter_names:
+            for parameter_name in route.path_parameters:
                 arguments[parameter_name] = match.group(parameter_name) or ""
 
-            if route.expected_packet_parameter_name is not None:
-                arguments[route.expected_packet_parameter_name] = packet
+            if route.packet_parameter is not None:
+                arguments[route.packet_parameter] = packet
 
             # It is guaranteed by the application that all expected
             # injectors are available, so we can safely access them here.
-            for injector_name in route.expected_injector_names:
+            for injector_name in route.injector_parameters:
                 arguments[injector_name] = injectors[injector_name]
 
             return await route.handler(**arguments)
@@ -198,7 +217,127 @@ class Router:
         return None
 
 
-def _compile_topic_pattern(topic_pattern: str) -> re.Pattern[str]:  # noqa: C901, PLR0912
+def _validate_topic_pattern(topic_pattern: str) -> None:
+    """Validate topic pattern.
+
+    Parameters
+    ----------
+    topic_pattern
+        Topic pattern to validate.
+
+    Raises
+    ------
+    RouteValidationError
+        If the topic pattern is invalid.
+    """
+    if not topic_pattern:
+        error_message = "Invalid topic pattern; topic pattern cannot be empty"
+        _logger.error(error_message)
+        raise RouteValidationError(error_message)
+
+    if SINGLE_LEVEL_WILDCARD in topic_pattern:
+        error_message = (
+            "Invalid topic pattern; single-level wildcard is not "
+            "allowed in topic pattern %s. Use path-parameters instead "
+            "(e.g. '{param}')"
+        )
+        _logger.error(error_message, topic_pattern)
+        raise RouteValidationError(error_message, topic_pattern)
+
+    segments = topic_pattern.split(TOPIC_SEPARATOR)
+    for index, segment in enumerate(segments):
+        if MULTI_LEVEL_WILDCARD in segment:
+            if segment != MULTI_LEVEL_WILDCARD:
+                error_message = (
+                    "Invalid topic pattern; multi-level wildcard must "
+                    "occupy entire segment in topic pattern %s"
+                )
+                _logger.error(error_message, topic_pattern)
+                raise RouteValidationError(error_message, topic_pattern)
+
+            if index != len(segments) - 1:
+                error_message = (
+                    "Invalid topic pattern; multi-level wildcard must "
+                    "be the last segment in topic pattern %s"
+                )
+                _logger.error(error_message, topic_pattern)
+                raise RouteValidationError(error_message, topic_pattern)
+
+        params_in_segment = PATH_PARAMETER_PATTERN.findall(segment)
+        if params_in_segment:
+            expected = f"{{{params_in_segment[0]}}}"
+            if len(params_in_segment) != 1 or segment != expected:
+                error_message = (
+                    "Invalid topic pattern; path-parameters must occupy "
+                    "the entire segment (e.g. '{param}'): %s"
+                )
+                _logger.error(error_message, topic_pattern)
+                raise RouteValidationError(error_message, topic_pattern)
+
+            if params_in_segment[0] == WILDCARD_PARAMETER_NAME:
+                error_message = (
+                    "Invalid topic pattern; path-parameter name %s is "
+                    "reserved: %s"
+                )
+                _logger.error(
+                    error_message,
+                    WILDCARD_PARAMETER_NAME,
+                    topic_pattern,
+                )
+                raise RouteValidationError(
+                    error_message,
+                    WILDCARD_PARAMETER_NAME,
+                    topic_pattern,
+                )
+
+
+def _validate_route_handler(handler: AnyCallable, topic_pattern: str) -> None:
+    if not inspect.iscoroutinefunction(handler):
+        error_message = "Invalid route handler; %s must be an async function"
+        _logger.error(error_message, handler.__qualname__)
+        raise RouteValidationError(error_message, handler.__qualname__)
+
+    signature = inspect.signature(handler)
+    handler_parameter_names = set(signature.parameters.keys())
+    path_parameter_names = set(PATH_PARAMETER_PATTERN.findall(topic_pattern))
+
+    if MULTI_LEVEL_WILDCARD in topic_pattern:
+        path_parameter_names.add(WILDCARD_PARAMETER_NAME)
+
+    # All path parameters in the topic pattern must have a corresponding
+    # handler parameter
+    missing = path_parameter_names - handler_parameter_names
+    if missing:
+        error_message = (
+            "Invalid route handler; missing parameters for path-"
+            "parameters in topic pattern %s: %r"
+        )
+        _logger.error(error_message, topic_pattern, missing)
+        raise RouteValidationError(error_message, topic_pattern, missing)
+
+    non_path_parameters = {
+        p
+        for p in signature.parameters.values()
+        if p.name not in path_parameter_names
+        and p.kind
+        in {
+            p.POSITIONAL_OR_KEYWORD,
+            p.KEYWORD_ONLY,
+        }
+    }
+    if len(non_path_parameters) > 1:
+        error_message = (
+            "Invalid route handler; more than one packet parameter in "
+            "topic pattern %s: %r"
+        )
+        raise RouteValidationError(
+            error_message,
+            topic_pattern,
+            {p.name for p in non_path_parameters},
+        )
+
+
+def _compile_topic_pattern(topic_pattern: str) -> re.Pattern[str]:
     """Compile ``topic_pattern`` into regex.
 
     Parameters
@@ -210,79 +349,28 @@ def _compile_topic_pattern(topic_pattern: str) -> re.Pattern[str]:  # noqa: C901
     -------
     re.Pattern[str]
         Compiled regex.
-
-    Raises
-    ------
-    FastCCError
-        If the topic pattern contains invalid placeholders.
     """
-    parameter_names: list[str] = []
     regex_parts: list[str] = []
-
     segments = topic_pattern.split(TOPIC_SEPARATOR)
-
-    if MULTI_LEVEL_WILDCARD in topic_pattern:
-        if not topic_pattern.endswith(TOPIC_SEPARATOR + MULTI_LEVEL_WILDCARD):
-            error_message = (
-                "Invalid topic pattern; multi-level wildcard must be the "
-                "last segment in topic: %r"
-            )
-            raise FastCCError(error_message, topic_pattern)
-        has_wildcard = True
 
     for segment in segments:
         if not segment:
             regex_parts.append("")
             continue
 
-        if segment.startswith("{") and segment.endswith("}"):
-            parameter_name = segment[1:-1]
-            if not parameter_name.isidentifier():
-                error_message = (
-                    "Invalid topic pattern; path-parameter in topic"
-                    "pattern must be valid identifiers not %r"
-                )
-                raise FastCCError(error_message, parameter_name)
-            if parameter_name == WILDCARD_PARAMETER_NAME:
-                error_message = (
-                    "Invalid topic pattern; path-parameter in topic"
-                    "pattern cannot be named %r because it is reserved"
-                )
-                raise FastCCError(error_message, WILDCARD_PARAMETER_NAME)
-            if parameter_name in parameter_names:
-                error_message = (
-                    "Invalid topic pattern; duplicate path-parameter in "
-                    "topic pattern: %r"
-                )
-                raise FastCCError(error_message, parameter_name)
-
-            parameter_names.append(parameter_name)
+        match = PATH_PARAMETER_PATTERN.fullmatch(segment)
+        if match is not None:
+            parameter_name = match.group(1)
             regex_parts.append(f"(?P<{parameter_name}>[^{TOPIC_SEPARATOR}]+)")
             continue
 
-        if "{" in segment or "}" in segment:
-            error_message = (
-                "Invalid topic pattern; invalid placeholder syntax in "
-                "segment: %r"
-            )
-            raise FastCCError(error_message, segment)
+        if segment == MULTI_LEVEL_WILDCARD:
+            regex_parts.append("(?P<wildcard>.+)")
+            break
 
         regex_parts.append(re.escape(segment))
 
-    regex_pattern = "^" + TOPIC_SEPARATOR.join(regex_parts)
-    if has_wildcard:
-        if regex_parts and regex_parts != [""]:
-            regex_pattern += (
-                f"(?:{TOPIC_SEPARATOR}(?P<{WILDCARD_PARAMETER_NAME}>.*))?"
-            )
-        elif regex_parts == [""]:
-            regex_pattern += (
-                f"{TOPIC_SEPARATOR}(?P<{WILDCARD_PARAMETER_NAME}>.*)"
-            )
-        else:
-            regex_pattern += f"(?P<{WILDCARD_PARAMETER_NAME}>.*)"
-
-    regex_pattern += "$"
+    regex_pattern = "^" + TOPIC_SEPARATOR.join(regex_parts) + "$"
     return re.compile(regex_pattern)
 
 
@@ -299,66 +387,4 @@ def _topic_pattern_to_topic(topic_pattern: str) -> str:
     str
         MQTT topic with placeholders replaced by single-level wildcards.
     """  # noqa: E501
-    return re.sub(r"\{[^{}]+\}", SINGLE_LEVEL_WILDCARD, topic_pattern)
-
-
-def _validate_handler(route: _Route, handler: _RouteHandler) -> None:
-    """Validate handler signature.
-
-    Parameters
-    ----------
-    route
-        Route metadata.
-    handler
-        Async route handler.
-
-    Raises
-    ------
-    FastCCError
-        If the handler signature is incompatible with the route.
-    """
-    is_async_func = inspect.iscoroutinefunction(handler)
-    if not is_async_func:
-        error_message = "Handler %r for topic %r must be an async function"
-        raise FastCCError(
-            error_message,
-            handler.__qualname__,
-            route.topic_pattern,
-        )
-
-    # Validate that the handler has parameters for all expected path parameters
-    signature = inspect.signature(handler)
-    for parameter_name in route.expected_path_parameter_names:
-        if parameter_name not in signature.parameters:
-            error_message = (
-                "Path parameter %r is missing in handler %r for topic %r"
-            )
-            raise FastCCError(
-                error_message,
-                parameter_name,
-                handler.__qualname__,
-                route.topic_pattern,
-            )
-
-    # Validate that the handler has only one non-path parameter, which
-    # is expected to be the packet
-    non_path_parameters = {
-        p
-        for p in signature.parameters.values()
-        if p.name not in route.expected_path_parameter_names
-        and p.kind
-        in {
-            p.POSITIONAL_OR_KEYWORD,
-            p.KEYWORD_ONLY,
-        }
-    }
-    if len(non_path_parameters) > 1:
-        error_message = (
-            "Handler %r for topic %r has more than one packet parameter: %r"
-        )
-        raise FastCCError(
-            error_message,
-            handler.__qualname__,
-            route.topic_pattern,
-            {p.name for p in non_path_parameters},
-        )
+    return PATH_PARAMETER_PATTERN.sub(SINGLE_LEVEL_WILDCARD, topic_pattern)
