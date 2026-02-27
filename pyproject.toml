@@ -25,12 +25,16 @@ classifiers = [
 ]
 dependencies = [
     "aiomqtt",  # Asynchronous MQTT Client (https://github.com/empicano/aiomqtt)
+    "protobuf", # Data Serialization (https://github.com/protocolbuffers/protobuf)
 ]
 
 [project.optional-dependencies]
 dev = [
     "ruff",           # Linter & Formatter (https://pypi.org/project/ruff)
     "mypy",           # Static Type Checker (https://pypi.org/project/mypy)
+    "Sphinx",         # Documentation Generator (https://pypi.org/project/Sphinx)
+    "furo",           # Documentation Theme (https://pypi.org/project/furo)
+    "types-protobuf", # Protobuf Type Hints (https://pypi.org/project/types-protobuf)
 ]
 
 [project.urls]
