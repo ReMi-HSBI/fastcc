@@ -1,11 +1,14 @@
 """Module defining the ``Client`` class."""
 
 import asyncio
+import contextlib
 import datetime
 import logging
 import math
 import types
 import typing
+import uuid
+from collections.abc import AsyncIterator
 
 import aiomqtt
 import paho.mqtt.properties as paho_properties
@@ -16,10 +19,13 @@ from fastcc.constants import (
     DEFAULT_MESSAGING_TIMEOUT,
     DEFAULT_MQTT_HOST,
     DEFAULT_MQTT_PORT,
+    DEFAULT_RESPONSE_TOPIC_PREFIX,
+    TOPIC_SEPARATOR,
 )
 from fastcc.exceptions import FastCCError, MessagingError
 from fastcc.qos import QoS
 from fastcc.serialization import serialize
+from fastcc.utilities.message import get_correlation_id
 
 __all__ = ["Client"]
 
@@ -40,6 +46,8 @@ class Client:
         IP address or DNS name of the MQTT-Broker to connect to.
     port
         Port number of the MQTT-Broker to connect to.
+    response_topic_prefix
+        Prefix for the response topic used in FastCC.
     codec_registry
         Optional codec registry used for payload serialization.
     kwargs
@@ -54,6 +62,8 @@ class Client:
         self,
         host: str = DEFAULT_MQTT_HOST,
         port: int = DEFAULT_MQTT_PORT,
+        *,
+        response_topic_prefix: str = DEFAULT_RESPONSE_TOPIC_PREFIX,
         codec_registry: CodecRegistry | None = None,
         **kwargs: typing.Any,
     ) -> None:
@@ -61,10 +71,28 @@ class Client:
         self._port = port
         self._codec_registry = codec_registry
 
-        # Ensure MQTTv5
+        # Ensure a unique identifier is set.
+        if "identifier" not in kwargs:
+            kwargs["identifier"] = uuid.uuid4().hex
+
+        # Ensure MQTTv5 is used.
         kwargs.update({"protocol": aiomqtt.ProtocolVersion.V5})
 
         self._client = aiomqtt.Client(host, port, **kwargs)
+
+        # TODO(justin.baudisch):
+        # As soon as possible, we should consider using the MQTTv5
+        # feature to automatically get a response topic by the broker
+        # instead of setting one ourselves. Currently, it cannot be
+        # guaranteed that the client is allowed to publish or subscribe
+        # to the specified response topic.
+        response_topic_parts = [response_topic_prefix, self._client.identifier]
+        self._response_topic = TOPIC_SEPARATOR.join(response_topic_parts)
+
+        maxsize = kwargs.get("max_queued_incoming_messages", 0)
+        self._messages: asyncio.Queue[aiomqtt.Message] = asyncio.Queue(maxsize)
+        self._responses: dict[str, asyncio.Queue[aiomqtt.Message]] = {}
+        self._message_dispatcher: asyncio.Task[None] | None = None
 
     @property
     def host(self) -> str:
@@ -85,6 +113,7 @@ class Client:
             _logger.exception(error_message, *addr)
             raise FastCCError(error_message, *addr) from e
 
+        await self._start_dispatcher()
         _logger.info("Connected to MQTT broker on %s:%d", *addr)
         return self
 
@@ -94,6 +123,7 @@ class Client:
         exc_value: BaseException | None,
         traceback: types.TracebackType | None,
     ) -> None:
+        await self._stop_dispatcher()
         await self._client.__aexit__(exc_type, exc_value, traceback)
 
     async def publish(  # noqa: PLR0913
@@ -121,8 +151,8 @@ class Client:
         properties
             Properties to include with the publication.
         timeout
-            Maximum time to wait for the publication. If ``None``, wait
-            indefinitely.
+            Maximum time to wait for the publication.
+            If ``None``, wait indefinitely.
 
         Raises
         ------
@@ -145,8 +175,8 @@ class Client:
 
         except aiomqtt.MqttCodeError as e:
             error_message = (
-                "Publish to topic=%r with qos=%d (%s), retain=%r failed "
-                "with error code: %r"
+                "Publish to topic=%r with qos=%d (%s), retain=%r "
+                "failed with error code: %r"
             )
             error_info: tuple[typing.Any, ...]
             error_info = (topic, qos.value, qos.name, retain, e.rc)
@@ -156,8 +186,8 @@ class Client:
         except TimeoutError as e:
             assert timeout is not None  # noqa: S101
             error_message = (
-                "Publish to topic=%r with qos=%d (%s), retain=%r timed "
-                "out after %.2f seconds"
+                "Publish to topic=%r with qos=%d (%s), retain=%r "
+                "timed out after %.2f seconds"
             )
             error_info = (
                 topic,
@@ -200,8 +230,8 @@ class Client:
         properties
             Properties to include with the subscription.
         timeout
-            Maximum time to wait for the subscription. If ``None``, wait
-            indefinitely.
+            Maximum time to wait for the subscription.
+            If ``None``, wait indefinitely.
 
         Raises
         ------
@@ -211,8 +241,8 @@ class Client:
         if options is None:
             options = paho_subscribeoptions.SubscribeOptions()
 
-        # Parameter ``qos`` takes precedence over ``options.qos`` if both
-        # are set.
+        # Parameter ``qos`` takes precedence over ``options.qos`` if
+        # both are set.
         options.QoS = qos.value
 
         try:
@@ -272,8 +302,8 @@ class Client:
         properties
             Properties to include with the unsubscription.
         timeout
-            Maximum time to wait for the unsubscription. If ``None``, wait
-            indefinitely.
+            Maximum time to wait for the unsubscription.
+            If ``None``, wait indefinitely.
 
         Raises
         ------
@@ -289,6 +319,7 @@ class Client:
                     properties=properties,
                     timeout=math.inf,
                 )
+
         except aiomqtt.MqttCodeError as e:
             error_message = (
                 "Unsubscribe from topic=%r failed with error code: %r"
@@ -305,6 +336,59 @@ class Client:
             raise MessagingError(error_message, *error_info) from e
 
         _logger.debug("Unsubscribed from topic=%r", topic)
+
+    async def iter_messages(self) -> AsyncIterator[aiomqtt.Message]:
+        """Asynchronous iterator over incoming messages.
+
+        Notes
+        -----
+        Responses are excluded from this iterator as they are handled
+        internally.
+
+        Yields
+        ------
+        aiomqtt.Message
+            Incoming message.
+        """
+        while True:
+            yield await self._messages.get()
+
+    async def _start_dispatcher(self) -> None:
+        await self.subscribe(
+            self._response_topic,
+            qos=QoS.AT_LEAST_ONCE,
+            options=paho_subscribeoptions.SubscribeOptions(
+                noLocal=True,
+            ),
+        )
+        self._message_dispatcher = asyncio.create_task(
+            self._dispatch_messages(),
+        )
+
+    async def _stop_dispatcher(self) -> None:
+        if self._message_dispatcher is None:
+            return
+
+        self._message_dispatcher.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await self._message_dispatcher
+
+        self._message_dispatcher = None
+
+    async def _dispatch_messages(self) -> None:
+        async for message in self._client.messages:
+            if message.topic.value == self._response_topic:
+                cid = get_correlation_id(message)
+                if cid is None:
+                    error_message = (
+                        "Received response message without correlation "
+                        "data on topic %r"
+                    )
+                    _logger.error(error_message, message.topic.value)
+                    continue
+                await self._responses[cid].put(message)
+                continue
+            await self._messages.put(message)
 
 
 def _timedelta_as_timeout(td: datetime.timedelta | None) -> float | None:

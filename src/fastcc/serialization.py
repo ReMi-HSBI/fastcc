@@ -1,12 +1,11 @@
 """Module defining flexible ``serialize`` and ``deserialize`` functions."""
 
 import enum
+import json
 import logging
 import struct
 import typing
 from collections.abc import Callable
-
-import google.protobuf.message as pb2_message
 
 from fastcc.codec import Codec, CodecRegistry
 from fastcc.constants import (
@@ -31,7 +30,7 @@ class _TypeTag(enum.IntEnum):
     INT = 0x03
     FLOAT = 0x04
     BOOL = 0x05
-    PROTOBUF = 0x06
+    JSON = 0x06
 
 
 type _EncoderCheck = Callable[[typing.Any], bool]
@@ -94,6 +93,18 @@ def _decode_bool(payload: bytes) -> typing.Any:
     return payload == BOOL_TRUE_BYTE
 
 
+def _encode_bytes(value: typing.Any) -> bytes:
+    return typing.cast(bytes, value)
+
+
+def _decode_bytes(payload: bytes) -> typing.Any:
+    return payload
+
+
+def _encode_string(value: typing.Any) -> bytes:
+    return typing.cast(str, value).encode("utf-8")
+
+
 def _decode_string(payload: bytes) -> typing.Any:
     try:
         return payload.decode("utf-8")
@@ -118,6 +129,10 @@ def _decode_int(payload: bytes) -> typing.Any:
     return int.from_bytes(payload, byteorder="big", signed=True)
 
 
+def _encode_float(value: typing.Any) -> bytes:
+    return struct.pack("!d", typing.cast(float, value))
+
+
 def _decode_float(payload: bytes) -> typing.Any:
     payload_length = len(payload)
     if payload_length != FLOAT_BYTE_LENGTH:
@@ -128,8 +143,20 @@ def _decode_float(payload: bytes) -> typing.Any:
     return struct.unpack("!d", payload)[0]
 
 
-def _encode_protobuf(value: typing.Any) -> bytes:
-    return typing.cast(pb2_message.Message, value).SerializeToString()
+def _can_encode_json(value: typing.Any) -> bool:
+    try:
+        json.dumps(value)
+        return True
+    except (TypeError, OverflowError):
+        return False
+
+
+def _encode_json(value: typing.Any) -> bytes:
+    return json.dumps(value).encode("utf-8")
+
+
+def _decode_json(payload: bytes) -> typing.Any:
+    return json.loads(payload.decode("utf-8"))
 
 
 def _build_default_registry() -> CodecRegistry:
@@ -152,34 +179,34 @@ def _build_default_registry() -> CodecRegistry:
         _SimpleCodec(
             tag=int(_TypeTag.BYTES),
             can_encode=lambda value: isinstance(value, bytes),
-            encode=lambda value: typing.cast(bytes, value),
-            decode=lambda payload: payload,
+            encode=_encode_bytes,
+            decode=_decode_bytes,
         ),
         _SimpleCodec(
             tag=int(_TypeTag.STR),
             can_encode=lambda value: isinstance(value, str),
-            encode=lambda value: typing.cast(str, value).encode("utf-8"),
+            encode=_encode_string,
             decode=_decode_string,
         ),
         _SimpleCodec(
             tag=int(_TypeTag.INT),
-            can_encode=lambda value: isinstance(value, int)
-            and not isinstance(value, bool),
+            can_encode=lambda value: (
+                isinstance(value, int) and not isinstance(value, bool)
+            ),
             encode=_encode_int,
             decode=_decode_int,
         ),
         _SimpleCodec(
             tag=int(_TypeTag.FLOAT),
             can_encode=lambda value: isinstance(value, float),
-            encode=lambda value: struct.pack("!d", typing.cast(float, value)),
+            encode=_encode_float,
             decode=_decode_float,
         ),
         _SimpleCodec(
-            tag=int(_TypeTag.PROTOBUF),
-            can_encode=lambda value: isinstance(value, pb2_message.Message),
-            encode=_encode_protobuf,
-            # Caller must parse with the concrete protobuf message class.
-            decode=lambda payload: payload,
+            tag=int(_TypeTag.JSON),
+            can_encode=_can_encode_json,
+            encode=_encode_json,
+            decode=_decode_json,
         ),
     )
     for codec in builtins:

@@ -11,7 +11,6 @@ from collections.abc import Callable
 import paho.mqtt.properties as paho_properties
 import paho.mqtt.subscribeoptions as paho_subscribeoptions
 
-from fastcc.annotations import AnyCallable, RouteHandler
 from fastcc.constants import (
     MULTI_LEVEL_WILDCARD,
     PATH_PARAMETER_PATTERN,
@@ -21,6 +20,7 @@ from fastcc.constants import (
 )
 from fastcc.exceptions import RouteValidationError
 from fastcc.qos import QoS
+from fastcc.utilities.annotations import AnyCallable, RouteHandler
 
 __all__ = ["Router"]
 

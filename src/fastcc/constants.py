@@ -44,3 +44,8 @@ WILDCARD_PARAMETER_NAME: typing.Final[str] = "wildcard"
 
 PATH_PARAMETER_PATTERN: typing.Final[re.Pattern[str]] = re.compile(r"\{(\w+)\}")
 """Regular expression pattern for extracting path parameters from topic patterns."""  # noqa: E501
+
+DEFAULT_RESPONSE_TOPIC_PREFIX: typing.Final[str] = (
+    f"fastcc{TOPIC_SEPARATOR}responses"
+)
+"""Default prefix for the response topic used in FastCC."""

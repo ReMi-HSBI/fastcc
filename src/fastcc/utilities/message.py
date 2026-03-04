@@ -1,8 +1,14 @@
 """Module defining message utilities."""
 
+import http
+import logging
+
 import aiomqtt
 
-from fastcc.exceptions import ErrorCode
+from fastcc.exceptions import FastCCError
+
+ErrorCode = http.HTTPStatus
+_logger = logging.getLogger(__name__)
 
 
 def get_correlation_id(message: aiomqtt.Message) -> str | None:
@@ -59,6 +65,11 @@ def get_error_code(message: aiomqtt.Message) -> ErrorCode | None:
     -------
     ErrorCode | None
         Error code if present, otherwise ``None``.
+
+    Raises
+    ------
+    FastCCError
+        If the error code is present but cannot be parsed.
     """
     user_properties = getattr(message.properties, "UserProperty", [])
     raw_error_code: str | None = next(
@@ -69,4 +80,9 @@ def get_error_code(message: aiomqtt.Message) -> ErrorCode | None:
     if raw_error_code is None:
         return None
 
-    return ErrorCode(int(raw_error_code))
+    try:
+        return ErrorCode(int(raw_error_code))
+    except ValueError as e:
+        error_message = "Failed to parse error code: %r"
+        _logger.exception(error_message, raw_error_code)
+        raise FastCCError(error_message, raw_error_code) from e
