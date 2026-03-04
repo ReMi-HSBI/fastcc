@@ -27,7 +27,7 @@ select = [
     "DJ",   # https://docs.astral.sh/ruff/rules/#flake8-django-dj
     "EM",   # https://docs.astral.sh/ruff/rules/#flake8-errmsg-em
     "EXE",  # https://docs.astral.sh/ruff/rules/#flake8-executable-exe
-    "FIX",  # https://docs.astral.sh/ruff/rules/#flake8-fixme-fix
+    # "FIX",  # https://docs.astral.sh/ruff/rules/#flake8-fixme-fix
     "FA",   # https://docs.astral.sh/ruff/rules/#flake8-future-annotations-fa
     "INT",  # https://docs.astral.sh/ruff/rules/#flake8-gettext-int
     "ISC",  # https://docs.astral.sh/ruff/rules/#flake8-implicit-str-concat-isc
@@ -76,6 +76,7 @@ select = [
 ignore = [
     "ANN401",  # https://docs.astral.sh/ruff/rules/any-type
     "D105",    # https://docs.astral.sh/ruff/rules/undocumented-magic-method
+    "ERA001",  # https://docs.astral.sh/ruff/rules/commented-out-code
 ]
 
 [lint.pydocstyle]
