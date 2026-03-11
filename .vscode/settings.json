@@ -1,0 +1,17 @@
+{
+  "editor.rulers": [
+    {
+      "column": 72,
+      "color": "#00a50033"
+    },
+    {
+      "column": 80,
+      "color": "#FF000033"
+    }
+  ],
+  "mypy-type-checker.importStrategy": "fromEnvironment",
+  "markdownlint.config": {
+    "MD033": false,
+    "MD041": false
+  }
+}
