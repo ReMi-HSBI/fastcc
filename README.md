@@ -17,6 +17,14 @@
     />
 </a>
 
+<p align="center">
+    <img
+        src="https://github.com/ReMi-HSBI/fastcc/blob/main/docs/src/static/images/logos/fastcc.svg?raw=true"
+        alt="FastCC Logo"
+        width="33%"
+    />
+</p>
+
 # FastCC
 
 FastCC is a lightweight, efficient and developer-friendly framework for
