@@ -12,3 +12,6 @@ ignore = ["CPY"]
 
 [lint.pydocstyle]
 convention = "numpy"
+
+[lint.per-file-ignores]
+"docs/src/conf.py" = ["INP001"]
