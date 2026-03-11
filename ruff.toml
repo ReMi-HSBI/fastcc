@@ -1,0 +1,14 @@
+src = ["src"]
+cache-dir = ".cache/ruff"
+line-length = 80
+preview = true
+
+[format]
+docstring-code-format = true
+
+[lint]
+select = ["ALL"]
+ignore = ["CPY"]
+
+[lint.pydocstyle]
+convention = "numpy"
