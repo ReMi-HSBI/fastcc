@@ -1,11 +1,15 @@
 """Asynchronous client to connect and communicate with an MQTT broker."""
 
+import dataclasses
 import logging
 import typing
 import uuid
 
 if typing.TYPE_CHECKING:
+    import datetime
     import types
+
+    import paho.mqtt.properties as paho_properties
 
 import aiomqtt
 
@@ -14,13 +18,36 @@ from fastcc.exceptions import MqttConnectionError
 
 _logger = logging.getLogger(__name__)
 
-__all__ = ["Client"]
+__all__ = ["Client", "MessageContext", "PublishContext"]
+
+
+@dataclasses.dataclass(slots=True, kw_only=True)
+class MessageContext:
+    """Context for a messaging operation.
+
+    Attributes
+    ----------
+    properties
+        Properties to include with the operation.
+    timeout
+        Maximum time to wait for the operation to finish.
+        If ``None``, wait indefinitely.
+    """
+
+    properties: paho_properties.Properties | None = None
+    timeout: datetime.timedelta | None = None
+
+
+@dataclasses.dataclass(slots=True, kw_only=True)
+class PublishContext(MessageContext):
+    """Context for a publish operation."""
 
 
 class Client:
     """Asynchronous client to connect and communicate with an MQTT broker.
 
-    This client is built on top of the ``aiomqtt.Client`` [1]_ ,
+    This client is built on top of the
+    `aiomqtt.Client <https://github.com/empicano/aiomqtt>`_,
     providing additional functionality and convenience methods for
     common MQTT operations.
 
@@ -38,10 +65,6 @@ class Client:
     The client relies on features introduced in version 5.0 of the MQTT
     protocol and will enforce the use of MQTT v5.0 when connecting to a
     broker.
-
-    References
-    ----------
-    .. [1] https://github.com/empicano/aiomqtt
     """
 
     def __init__(
@@ -106,7 +129,8 @@ class Client:
         In almost any case, it is recommended to not call this method
         directly, but to use the asynchronous context manager instead.
 
-        >>> async with Client() as client: ...
+        >>> async with Client() as client:
+        ...     ...
         """
         try:
             await self._client.__aenter__()  # noqa: PLC2801
@@ -150,6 +174,15 @@ class Client:
         In almost any case, it is recommended to not call this method
         directly, but to use the asynchronous context manager instead.
 
-        >>> async with Client() as client: ...
+        >>> async with Client() as client:
+        ...     ...
         """
         await self._client.__aexit__(exc_type, exc_value, traceback)
+
+    async def publish(
+        self,
+        topic: str,
+        payload: object,
+        *,
+        context: PublishContext | None = None,
+    ) -> None: ...

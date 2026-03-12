@@ -1,8 +1,9 @@
 """Framework for MQTT communication.
 
 FastCC is a lightweight, efficient and developer-friendly framework for
-MQTT [1]_ communication. It is built on top of the **aiomqtt** [2]_
-library and extends it with the following functionalities:
+`MQTT <https://mqtt.org>`_ communication. It is built on top of the
+`aiomqtt <https://github.com/empicano/aiomqtt>`_ library and extends it
+with the following functionalities:
 
 +----------------------------------+---------------+
 | Feature                          | Status        |
@@ -15,11 +16,6 @@ library and extends it with the following functionalities:
 +----------------------------------+---------------+
 | Streaming                        | 📋Planned     |
 +----------------------------------+---------------+
-
-References
-----------
-.. [1] https://mqtt.org
-.. [2] https://github.com/empicano/aiomqtt
 """
 
 from fastcc.client import Client

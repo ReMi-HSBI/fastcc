@@ -117,9 +117,8 @@ def calculate_circle_area(radius: float) -> float:
     References
     ----------
     This function uses the mathematical constant π (pi) from the math
-    module and applies the formula for the area of a circle [1]_.
-
-    .. [1] https://en.wikipedia.org/wiki/Area_of_a_circle
+    module and applies the formula for the
+    `area of a circle <https://en.wikipedia.org/wiki/Area_of_a_circle>`_.
 
     Examples
     --------
