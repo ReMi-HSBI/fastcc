@@ -21,3 +21,7 @@ References
 .. [1] https://mqtt.org
 .. [2] https://github.com/empicano/aiomqtt
 """
+
+from fastcc.client import Client
+
+__all__ = ["Client"]

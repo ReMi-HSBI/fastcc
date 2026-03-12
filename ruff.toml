@@ -8,7 +8,7 @@ docstring-code-format = true
 
 [lint]
 select = ["ALL"]
-ignore = ["CPY"]
+ignore = ["CPY", "ANN401", "D105"]
 
 [lint.pydocstyle]
 convention = "numpy"
