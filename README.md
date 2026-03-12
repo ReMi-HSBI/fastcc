@@ -16,7 +16,8 @@
         alt="Gitmoji"
     />
 </a>
-
+<br />
+<br />
 <p align="center">
     <img
         src="https://github.com/ReMi-HSBI/fastcc/blob/main/docs/src/static/images/logos/fastcc.svg?raw=true"

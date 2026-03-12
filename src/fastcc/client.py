@@ -14,6 +14,8 @@ from fastcc.exceptions import MqttConnectionError
 
 _logger = logging.getLogger(__name__)
 
+__all__ = ["Client"]
+
 
 class Client:
     """Asynchronous client to connect and communicate with an MQTT broker.
@@ -21,6 +23,15 @@ class Client:
     This client is built on top of the ``aiomqtt.Client`` [1]_ ,
     providing additional functionality and convenience methods for
     common MQTT operations.
+
+    Parameters
+    ----------
+    host
+        IP address or DNS name of the MQTT-Broker to connect to.
+    port
+        Port number of the MQTT-Broker to connect to.
+    **kwargs
+        Keyword arguments to be passed to the underlying client.
 
     Notes
     -----
@@ -39,20 +50,6 @@ class Client:
         port: int = DEFAULT_MQTT_PORT,
         **kwargs: typing.Any,
     ) -> None:
-        """Initialize the MQTT client.
-
-        The constructor accepts all keyword arguments that are supported
-        by the underlying ``aiomqtt.Client``.
-
-        Parameters
-        ----------
-        host
-            IP address or DNS name of the MQTT-Broker to connect to.
-        port
-            Port number of the MQTT-Broker to connect to.
-        **kwargs
-            Keyword arguments to be passed to the underlying client.
-        """
         self._host = host
         self._port = port
 
@@ -66,8 +63,53 @@ class Client:
         self._client = aiomqtt.Client(host, port, **kwargs)
 
     async def __aenter__(self) -> typing.Self:
+        await self.connect()
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: types.TracebackType | None,
+    ) -> None:
+        await self.disconnect(exc_type, exc_value, traceback)
+
+    @property
+    def host(self) -> str:
+        """IP address or DNS name the client is or will be connected to."""
+        return self._host
+
+    @property
+    def port(self) -> int:
+        """Port number the client is or will be connected to."""
+        return self._port
+
+    async def connect(self) -> None:
+        """Connect to the MQTT broker.
+
+        Example
+        -------
+        >>> async def main() -> None:
+        >>>    client = Client()
+        >>>    try:
+        >>>        await client.connect()
+        >>>    finally:
+        >>>        await client.disconnect()
+
+        Raises
+        ------
+        MqttConnectionError
+            If the connection to the MQTT broker fails.
+
+        Notes
+        -----
+        In almost any case, it is recommended to not call this method
+        directly, but to use the asynchronous context manager instead.
+
+        >>> async with Client() as client: ...
+        """
         try:
-            await self._client.__aenter__()
+            await self._client.__aenter__()  # noqa: PLC2801
         except aiomqtt.MqttError as exc:
             _logger.debug(
                 "Failed to connect to MQTT broker on %s:%d",
@@ -82,22 +124,32 @@ class Client:
             self._host,
             self._port,
         )
-        return self
 
-    async def __aexit__(
+    async def disconnect(
         self,
-        exc_type: type[BaseException] | None,
-        exc_value: BaseException | None,
-        traceback: types.TracebackType | None,
+        exc_type: type[BaseException] | None = None,
+        exc_value: BaseException | None = None,
+        traceback: types.TracebackType | None = None,
     ) -> None:
+        """Disconnect from the MQTT broker.
+
+        Parameters
+        ----------
+        exc_type
+            The exception type if the disconnection is triggered by an
+            exception, otherwise ``None``.
+        exc_value
+            The exception value if the disconnection is triggered by an
+            exception, otherwise ``None``.
+        traceback
+            The traceback if the disconnection is triggered by an
+            exception, otherwise ``None``.
+
+        Notes
+        -----
+        In almost any case, it is recommended to not call this method
+        directly, but to use the asynchronous context manager instead.
+
+        >>> async with Client() as client: ...
+        """
         await self._client.__aexit__(exc_type, exc_value, traceback)
-
-    @property
-    def host(self) -> str:
-        """IP address or DNS name the client is or will be connected to."""
-        return self._host
-
-    @property
-    def port(self) -> int:
-        """Port number the client is or will be connected to."""
-        return self._port
