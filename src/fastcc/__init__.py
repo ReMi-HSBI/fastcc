@@ -8,16 +8,30 @@ with the following functionalities:
 +----------------------------------+---------------+
 | Feature                          | Status        |
 +==================================+===============+
-| Routing                          | 📋Planned     |
+| Routing                          | 📋 Planned    |
 +----------------------------------+---------------+
-| Custom payload encoding/decoding | 📋Planned     |
+| Custom payload encoding/decoding | ✅ Done       |
 +----------------------------------+---------------+
-| Request/Response                 | 📋Planned     |
+| Request/Response                 | 📋 Planned    |
 +----------------------------------+---------------+
-| Streaming                        | 📋Planned     |
+| Streaming                        | 📋 Planned    |
 +----------------------------------+---------------+
 """
 
-from fastcc.client import Client
+from fastcc.client import (
+    Client,
+    PublishContext,
+    SubscribeContext,
+    UnsubscribeContext,
+)
+from fastcc.qos import QoS
+from fastcc.serialization import default_registry
 
-__all__ = ["Client"]
+__all__ = [
+    "Client",
+    "PublishContext",
+    "QoS",
+    "SubscribeContext",
+    "UnsubscribeContext",
+    "default_registry",
+]
