@@ -2,9 +2,6 @@
 
 import typing
 
-if typing.TYPE_CHECKING:
-    from fastcc.qos import QoS
-
 
 class FastCCError(Exception):
     """Base exception class for FastCC-related errors."""
@@ -17,14 +14,6 @@ class MqttConnectionError(FastCCError):
         super().__init__(f"Could not connect to MQTT broker on '{host}:{port}'")
         self.host = host
         self.port = port
-
-
-class InvalidQoSLevelError(FastCCError):
-    """Raised when an an invalid QoS level was used."""
-
-    def __init__(self, *, qos: QoS) -> None:
-        super().__init__(f"Invalid QoS level: {qos}.")
-        self.qos = qos
 
 
 class OperationError(FastCCError):
@@ -75,6 +64,33 @@ class OperationTimeoutError(FastCCError):
         self.timeout = timeout
 
 
+class ResponseTimeoutError(FastCCError):
+    """Raised when waiting for a response times out.
+
+    Parameters
+    ----------
+    topic
+        The topic associated with the request for which the response
+        was expected.
+    timeout
+        The duration in seconds after which waiting for the response
+        timed out.
+    """
+
+    def __init__(
+        self,
+        *,
+        topic: str,
+        timeout: float,
+    ) -> None:
+        super().__init__(
+            f"Waiting for response to request on topic '{topic}' timed "
+            f"out after {timeout}s",
+        )
+        self.topic = topic
+        self.timeout = timeout
+
+
 class CodecConflictError(FastCCError):
     """Raised when a codec with a conflicting tag is registered."""
 
@@ -93,3 +109,11 @@ class InvalidCodecTagError(SerializationError):
     def __init__(self, *, tag: typing.Any) -> None:
         super().__init__(f"Invalid codec tag: {tag}")
         self.tag = tag
+
+
+class InvalidContextError(FastCCError):
+    """Raised when an invalid context is used for a messaging operation."""
+
+
+class MalformedMessageError(FastCCError):
+    """Raised when a received message is malformed or does not conform to the expected format."""  # noqa: E501

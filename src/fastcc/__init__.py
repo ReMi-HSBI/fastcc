@@ -12,7 +12,7 @@ with the following functionalities:
 +----------------------------------+---------------+
 | Custom payload encoding/decoding | ✅ Done       |
 +----------------------------------+---------------+
-| Request/Response                 | 📋 Planned    |
+| Request/Response                 | ✅ Done       |
 +----------------------------------+---------------+
 | Streaming                        | 📋 Planned    |
 +----------------------------------+---------------+
@@ -21,16 +21,20 @@ with the following functionalities:
 from fastcc.client import (
     Client,
     PublishContext,
+    RequestContext,
     SubscribeContext,
     UnsubscribeContext,
 )
+from fastcc.constants import STATUS_CODE_SUCCESS
 from fastcc.qos import QoS
 from fastcc.serialization import default_registry
 
 __all__ = [
+    "STATUS_CODE_SUCCESS",
     "Client",
     "PublishContext",
     "QoS",
+    "RequestContext",
     "SubscribeContext",
     "UnsubscribeContext",
     "default_registry",

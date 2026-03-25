@@ -19,3 +19,15 @@ BOOL_TRUE_BYTE: typing.Final[bytes] = b"\x01"
 
 FLOAT_BYTE_LENGTH: typing.Final[int] = 8
 """Number of bytes used to encode a floating-point number."""
+
+TOPIC_SEPARATOR: typing.Final[str] = "/"
+"""Separator used in MQTT topics."""
+
+DEFAULT_RESPONSE_TOPIC_PREFIX: typing.Final[str] = TOPIC_SEPARATOR.join((
+    "fastcc",
+    "responses",
+))
+"""Default prefix for MQTT topics used for receiving responses in request/response communication."""  # noqa: E501
+
+STATUS_CODE_SUCCESS: typing.Final[int] = 0
+"""Status code indicating a successful operation."""
