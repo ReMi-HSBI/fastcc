@@ -206,6 +206,11 @@ class RequestContext(PublishContext):
             raise InvalidContextError(error_message)
 
 
+@dataclasses.dataclass(slots=True, kw_only=True)
+class StreamContext(RequestContext):
+    """Context for a stream operation."""
+
+
 class Client:
     """Asynchronous client to connect and communicate with an MQTT broker.
 
@@ -262,6 +267,10 @@ class Client:
         self._listener: asyncio.Task[None] | None = None
         self._messages: asyncio.Queue[aiomqtt.Message] = asyncio.Queue()
         self._pending_responses: dict[str, asyncio.Future[aiomqtt.Message]] = {}
+        self._pending_responses_queue: dict[
+            str,
+            asyncio.Queue[aiomqtt.Message],
+        ] = {}
 
     async def __aenter__(self) -> typing.Self:
         await self.start()
@@ -638,6 +647,73 @@ class Client:
         finally:
             del self._pending_responses[cid]
 
+    async def stream(
+        self,
+        topic: str,
+        value: typing.Any = None,
+        *,
+        context: StreamContext | None = None,
+    ) -> AsyncIterator[Response]:
+        """Publish a packet and stream the response.
+
+        The stream ends when the responding client sends an empty
+        response (``None``).
+
+        Parameters
+        ----------
+        topic
+            The topic that the packet should be published on.
+        value
+            The actual value to send.
+            If ``None``, an empty value is published.
+        context
+            Context for the stream operation.
+
+        Yields
+        ------
+        Response
+            One response of the stream.
+
+        Raises
+        ------
+        ResponseTimeoutError
+            If waiting for a response times out.
+        """
+        if context is None:
+            context = StreamContext()
+
+        cid = uuid.uuid4().hex
+        context.properties.CorrelationData = cid.encode("utf-8")
+        context.properties.ResponseTopic = self._response_topic
+
+        response_queue: asyncio.Queue[aiomqtt.Message] = asyncio.Queue()
+        self._pending_responses_queue[cid] = response_queue
+
+        try:
+            await self.publish(topic, value, context=context)
+            async with asyncio.timeout(
+                _timedelta_to_seconds(context.timeout),
+            ):
+                while True:
+                    response_message = await response_queue.get()
+                    response = Response.from_message(
+                        response_message,
+                        codec_registry=self._codec_registry,
+                    )
+                    if response.packet is None:
+                        break
+
+                    yield response
+
+        except TimeoutError as exc:
+            assert context.timeout is not None  # noqa: S101
+            raise ResponseTimeoutError(
+                topic=topic,
+                timeout=context.timeout.total_seconds(),
+            ) from exc
+        finally:
+            del self._pending_responses_queue[cid]
+
     async def iter_messages(self) -> AsyncIterator[aiomqtt.Message]:
         """Iterate over incoming messages.
 
@@ -676,17 +752,20 @@ class Client:
                     )
                     continue
 
-                response_future = self._pending_responses.get(cid)
-                if response_future is None or response_future.done():
+                if cid in self._pending_responses:
+                    response_future = self._pending_responses[cid]
+                    response_future.set_result(message)
+                elif cid in self._pending_responses_queue:
+                    response_queue = self._pending_responses_queue[cid]
+                    response_queue.put_nowait(message)
+                else:
                     _logger.warning(
                         "Received response message with correlation ID "
                         "'%s', but no pending response was found for "
                         "this ID - ignoring message",
                         cid,
                     )
-                    continue
 
-                response_future.set_result(message)
         finally:
             await self.unsubscribe(self._response_topic)
 

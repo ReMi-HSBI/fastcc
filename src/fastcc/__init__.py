@@ -14,7 +14,7 @@ with the following functionalities:
 +----------------------------------+---------------+
 | Request/Response                 | ✅ Done       |
 +----------------------------------+---------------+
-| Streaming                        | 📋 Planned    |
+| Streaming                        | ✅ Done       |
 +----------------------------------+---------------+
 """
 
@@ -22,6 +22,7 @@ from fastcc.client import (
     Client,
     PublishContext,
     RequestContext,
+    StreamContext,
     SubscribeContext,
     UnsubscribeContext,
 )
@@ -35,6 +36,7 @@ __all__ = [
     "PublishContext",
     "QoS",
     "RequestContext",
+    "StreamContext",
     "SubscribeContext",
     "UnsubscribeContext",
     "default_registry",
