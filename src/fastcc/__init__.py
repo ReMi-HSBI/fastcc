@@ -18,6 +18,22 @@ with the following functionalities:
 +----------------------------------+---------------+
 """
 
-from fastcc.client import Client
+from fastcc.client import (
+    Client,
+    PublishContext,
+    RequestContext,
+    StreamContext,
+    SubscribeContext,
+    UnsubscribeContext,
+)
+from fastcc.qos import QoS
 
-__all__ = ["Client"]
+__all__ = [
+    "Client",
+    "PublishContext",
+    "QoS",
+    "RequestContext",
+    "StreamContext",
+    "SubscribeContext",
+    "UnsubscribeContext",
+]
