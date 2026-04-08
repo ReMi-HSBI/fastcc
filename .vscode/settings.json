@@ -1,0 +1,17 @@
+{
+  "editor.rulers": [
+    {
+      // This value is also specified in the copilot-instructions.md
+      // and should be kept in sync with it.
+      "column": 72,
+      "color": "#00a50033"
+    },
+    {
+      // This value is also specified in the copilot-instructions.md
+      // + ruff.toml and should be kept in sync with it.
+      "column": 80,
+      "color": "#FF000033"
+    }
+  ],
+  "mypy-type-checker.importStrategy": "fromEnvironment"
+}
