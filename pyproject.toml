@@ -23,7 +23,9 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
     "Typing :: Typed",
 ]
-dependencies = []
+dependencies = [
+    "aiomqtt",  # Asynchronous MQTT Client Library (https://pypi.org/project/aiomqtt)
+]
 
 [project.optional-dependencies]
 dev = [

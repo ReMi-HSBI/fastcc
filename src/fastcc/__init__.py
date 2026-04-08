@@ -17,3 +17,7 @@ with the following functionalities:
 | Routing                          | 📋 Planned    |
 +----------------------------------+---------------+
 """
+
+from fastcc.client import Client
+
+__all__ = ["Client"]

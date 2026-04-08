@@ -5,7 +5,7 @@ preview = true
 
 [lint]
 select = ["ALL"]
-ignore = ["CPY"]
+ignore = ["CPY", "D105", "S101", "ANN401"]
 
 [lint.pydocstyle]
 convention = "numpy"
