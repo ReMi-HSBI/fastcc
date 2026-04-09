@@ -13,5 +13,10 @@
       "color": "#FF000033"
     }
   ],
-  "mypy-type-checker.importStrategy": "fromEnvironment"
+  "mypy-type-checker.importStrategy": "fromEnvironment",
+  "github.copilot.chat.commitMessageGeneration.instructions": [
+    {
+      "file": ".claude/skills/git-commit/SKILL.md"
+    }
+  ]
 }
