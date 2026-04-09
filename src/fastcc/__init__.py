@@ -27,12 +27,14 @@ from fastcc.client import (
     UnsubscribeContext,
 )
 from fastcc.qos import QoS
+from fastcc.router import Router
 
 __all__ = [
     "Client",
     "PublishContext",
     "QoS",
     "RequestContext",
+    "Router",
     "StreamContext",
     "SubscribeContext",
     "UnsubscribeContext",

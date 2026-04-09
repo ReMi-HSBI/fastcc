@@ -19,3 +19,9 @@ DEFAULT_RESPONSE_TOPIC: typing.Final[str] = TOPIC_SEPARATOR.join((
 
 STATUS_CODE_SUCCESS: typing.Final[int] = 0
 """Status code indicating a successful operation."""
+
+PATH_PARAMETER_PATTERN: typing.Final[str] = r"\\{(\w+)\\}"
+"""Regular expression pattern for matching path parameters in topic patterns."""
+
+MULTI_LEVEL_WILDCARD: typing.Final[str] = "#"
+"""Multi-level wildcard character used in MQTT topic patterns."""
