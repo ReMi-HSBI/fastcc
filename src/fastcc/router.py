@@ -18,6 +18,9 @@ from fastcc.client import PublishContext
 from fastcc.constants import (
     MULTI_LEVEL_WILDCARD,
     PATH_PARAMETER_PATTERN,
+    SINGLE_LEVEL_WILDCARD,
+    STATUS_CODE_FAILURE,
+    STATUS_CODE_SUCCESS,
     TOPIC_SEPARATOR,
 )
 from fastcc.qos import QoS
@@ -37,45 +40,48 @@ class Route:
 
     Parameters
     ----------
-    raw_pattern
+    pattern
         The MQTT topic pattern for this route, which may include path
-        parameters and wildcards.
+        parameters and a multi-level wildcard.
     handler
         The asynchronous function that will be called when a message is
-        published to a topic matching this route's pattern.
+        published to a topic matching ``pattern``.
 
     Attributes
     ----------
     topic
-        The concrete (subscribable) topic for this route.
-    pattern
-        The compiled regular expression pattern used for matching topics
-        against this route.
+        The concrete (subscribable) MQTT topic for this route.
+    regex
+        The compiled regular expression pattern used for matching
+        topics of incoming messages against this route.
     """
 
-    raw_pattern: dataclasses.InitVar[str]
+    pattern: dataclasses.InitVar[str]
+
     handler: Routable
-
     topic: str = dataclasses.field(init=False)
-    pattern: re.Pattern = dataclasses.field(init=False)
+    regex: re.Pattern = dataclasses.field(init=False)
 
-    def __post_init__(self, raw_pattern: str) -> None:
-        object.__setattr__(
-            self,
-            "topic",
-            re.sub(r"\{[^}/]+\}", "+", raw_pattern),
-        )
-        object.__setattr__(self, "pattern", compile_pattern(raw_pattern))
+    def __post_init__(self, pattern: str) -> None:
+        validate_pattern(pattern)
+        object.__setattr__(self, "topic", pattern_to_topic(pattern))
+        object.__setattr__(self, "regex", compile_pattern(pattern))
 
-    async def __call__(self, topic: str, data: bytes) -> bytes | None:
+    async def __call__(
+        self,
+        data: bytes,
+        **path_parameters: str,
+    ) -> bytes | None:
         """Invoke the route's handler with the given data.
 
         Parameters
         ----------
-        topic
-            The MQTT topic of the incoming message.
         data
             The payload data to pass to the handler function.
+        path_parameters
+            Path parameters extracted from the topic, where keys are
+            parameter names and values are the corresponding values
+            from the topic.
 
         Returns
         -------
@@ -83,12 +89,23 @@ class Route:
             The result returned by the handler function, or ``None`` if
             the handler does not return a value.
         """
-        match = self.pattern.fullmatch(topic)
-        if not match:
-            return None  # TODO(jb)
-
-        path_parameters = match.groupdict()
         return await self.handler(data, **path_parameters)
+
+    def match(self, topic: str) -> re.Match[str] | None:
+        """Match a given topic against this route's pattern.
+
+        Parameters
+        ----------
+        topic
+            The MQTT topic to match against this route's pattern.
+
+        Returns
+        -------
+        re.Match[str] | None
+            A match object if the topic matches this route's pattern,
+            otherwise ``None``.
+        """
+        return self.regex.fullmatch(topic)
 
 
 class Router:
@@ -123,7 +140,7 @@ class Router:
         """Get the set of registered routes in this router."""
         return self._routes
 
-    def get(self, topic: str) -> Route | None:
+    def get(self, topic: str) -> tuple[Route | None, dict[str, str]]:
         """Resolve a topic to a registered route.
 
         Parameters
@@ -133,13 +150,14 @@ class Router:
 
         Returns
         -------
-        Route | None
-            The matching route if found, otherwise ``None``.
+        tuple[Route | None, dict[str, str]]
+            A tuple containing the matching route and path parameters if found,
+            otherwise ``(None, {})``.
         """
         for route in self._routes:
-            if route.pattern.fullmatch(topic) is not None:
-                return route
-        return None
+            if (match := route.match(topic)) is not None:
+                return route, match.groupdict()
+        return None, {}
 
     def route(self, pattern: str) -> Callable[[Routable], Routable]:
         """Register a route handler for a given topic pattern.
@@ -201,44 +219,136 @@ class Router:
         message: aiomqtt.Message,
         client: Client,
     ) -> None:
-        """Execute the handler for a given route with the provided topic and data.
-
-        Parameters
-        ----------
-        message
-            The incoming MQTT message.
-        client
-            The MQTT client, used for publishing responses.
-        """
         topic = message.topic.value
-        route = self.get(topic)
+
+        route, path_parameters = self.get(topic)
         if route is None:
             return
 
-        result = await route(topic, message.payload)
-        if result is None:
-            return
+        response_topic = None
+        correlation_id = None
+        if message.properties is not None:
+            response_topic = getattr(message.properties, "ResponseTopic", None)
+            correlation_id = getattr(
+                message.properties,
+                "CorrelationData",
+                None,
+            )
 
-        if message.properties is None:
-            _logger.error("No properties for response")  # TODO(jb)
-            return
-
-        response_topic = getattr(message.properties, "ResponseTopic", None)
-        if response_topic is None:
-            _logger.error("No ResponseTopic for response")  # TODO(jb)
-            return
-
-        correlation_id = getattr(message.properties, "CorrelationData", None)
-        if correlation_id is None:
-            _logger.error("No CorrelationData for response")  # TODO(jb)
-            return
-
-        properties = paho_properties.Properties(
+        response_properties = paho_properties.Properties(
             paho_packettypes.PacketTypes.PUBLISH,
         )
-        properties.CorrelationData = correlation_id
-        context = PublishContext(_properties=properties, qos=QoS.AT_LEAST_ONCE)
+        status_code = STATUS_CODE_SUCCESS
+
+        # TODO(jb): Injectors
+        try:
+            result = await route(message.payload, **path_parameters)
+        except Exception as exc:  # noqa: BLE001
+            result = str(exc).encode()
+            status_code = (
+                exc.status_code
+                if hasattr(exc, "status_code")
+                else STATUS_CODE_FAILURE
+            )
+
+        if response_topic is None:
+            if result is not None:
+                _logger.warning(
+                    "Handler returned a result but no response topic "
+                    "was provided in the message properties; result "
+                    "will be discarded (topic: %r)",
+                    topic,
+                )
+            return
+
+        if correlation_id is None:
+            _logger.warning(
+                "Malformed message: No correlation ID was provided in "
+                "the message properties; response will be discarded "
+                "(topic: %r)",
+                topic,
+            )
+            return
+
+        response_properties.CorrelationData = correlation_id
+        response_properties.UserProperty = [
+            ("status_code", str(status_code)),
+        ]
+        context = PublishContext(
+            _properties=response_properties,
+            qos=QoS.AT_LEAST_ONCE,
+        )
+
+        # TODO(jb): What if this publish fails?
         await client.publish(response_topic, result, context=context)
+
+
+def validate_pattern(pattern: str) -> None:
+    """Validate a topic pattern for correctness.
+
+    This function checks that the given MQTT topic pattern is valid,
+    ensuring that wildcards are used correctly and that path parameters
+    are well-formed.
+
+    Parameters
+    ----------
+    pattern
+        The MQTT topic pattern to validate.
+
+    Raises
+    ------
+    ValueError
+        If the pattern is invalid.
+    """
+    if not pattern:
+        error_message = "Topic pattern cannot be empty"
+        raise ValueError(error_message)
+
+    if SINGLE_LEVEL_WILDCARD in pattern:
+        error_message = (
+            f"Invalid topic pattern: Single-level wildcard"
+            f"'{SINGLE_LEVEL_WILDCARD}' is not allowed in topic "
+            f"patterns. Use path parameters (e.g. '{{param}}') "
+            f"instead."
+        )
+        raise ValueError(error_message)
+
+    segments = pattern.split(TOPIC_SEPARATOR)
+    for i, segment in enumerate(segments):
+        if MULTI_LEVEL_WILDCARD in segment:
+            if segment != MULTI_LEVEL_WILDCARD:
+                error_message = (
+                    f"Invalid topic pattern: Multi-level wildcard "
+                    f"'{MULTI_LEVEL_WILDCARD}' must occupy an entire "
+                    f"topic segment (invalid segment: '{segment}')."
+                )
+                raise ValueError(error_message)
+            if i != len(segments) - 1:
+                error_message = (
+                    f"Invalid topic pattern: Multi-level wildcard "
+                    f"'{MULTI_LEVEL_WILDCARD}' must be the last "
+                    f"segment in the pattern (invalid position: "
+                    f"segment {i} of {len(segments)})."
+                )
+                raise ValueError(error_message)
+
+        if "{" in segment or "}" in segment:
+            if (match := re.fullmatch(PATH_PARAMETER_PATTERN, segment)) is None:
+                error_message = (
+                    f"Invalid topic pattern: Path parameters must "
+                    f"occupy an entire topic segment and be "
+                    f"well-formed (invalid segment: '{segment}')."
+                )
+                raise ValueError(error_message)
+
+            path_parameter_name = match.group(1)
+            if path_parameter_name[0].isdigit():
+                error_message = (
+                    f"Invalid topic pattern: Path parameter names must "
+                    f"start with a letter or underscore (invalid "
+                    f"segment: '{segment}')."
+                )
+                raise ValueError(error_message)
 
 
 def compile_pattern(pattern: str) -> re.Pattern:
@@ -260,12 +370,31 @@ def compile_pattern(pattern: str) -> re.Pattern:
         A compiled regular expression that can be used to match topics
         against the given pattern.
     """
-    escaped = re.escape(pattern)
+    # Replace path-parameter with regex equivalent
+    pattern = re.sub(PATH_PARAMETER_PATTERN, r"(?P<\1>[^/]+)", pattern)
 
-    # Replace escaped parameter syntax with regex groups
-    pattern = re.sub(PATH_PARAMETER_PATTERN, r"(?P<\1>[^/]+)", escaped)
-
-    # Replace escaped multi-level wildcard with regex equivalent.
-    pattern = pattern.replace(rf"\{MULTI_LEVEL_WILDCARD}", "(?P<wildcard>.+)")
+    # Replace multi-level wildcard with regex equivalent
+    pattern = pattern.replace(MULTI_LEVEL_WILDCARD, r"(?P<wildcard>.*)")
 
     return re.compile(pattern)
+
+
+def pattern_to_topic(pattern: str) -> str:
+    """Convert a topic pattern with path parameters to a concrete topic.
+
+    This function replaces path parameters in the given MQTT topic
+    pattern with single-level wildcards (``+``), resulting in a
+    concrete topic that can be subscribed to.
+
+    Parameters
+    ----------
+    pattern
+        The MQTT topic pattern containing path parameters
+        (e.g. ``{param}``).
+
+    Returns
+    -------
+    str
+        A concrete MQTT topic with path parameters replaced by ``+``.
+    """
+    return re.sub(PATH_PARAMETER_PATTERN, SINGLE_LEVEL_WILDCARD, pattern)
