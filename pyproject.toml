@@ -23,6 +23,9 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
     "Typing :: Typed",
 ]
+license = "MIT"
+license-files = ["LICENSE"]
+
 dependencies = [
     "aiomqtt",  # Asynchronous MQTT Client Library (https://pypi.org/project/aiomqtt)
 ]
