@@ -260,22 +260,22 @@ class Client:
     async def publish(
         self,
         topic: str,
-        data: bytes | None = None,
+        payload: bytes | None = None,
         *,
         context: PublishContext | None = None,
     ) -> None:
-        """Publish a packet.
+        """Publish ``payload`` to the given ``topic``.
 
-        The data is sent to the broker and then subsequently to any
+        The payload is sent to the broker and then subsequently to any
         clients subscribing to matching topics.
 
         Parameters
         ----------
         topic
-            The topic that the packet should be published on.
-        data
-            The data to send.
-            If ``None``, an empty value is published.
+            The topic ``payload`` should be published on.
+        payload
+            The payload to send.
+            If ``None``, an empty payload is published.
         context
             Context for the publish operation.
 
@@ -290,7 +290,7 @@ class Client:
         try:
             await self._client.publish(
                 topic,
-                data,
+                payload,
                 context.qos,
                 context.retain,
                 context.properties,
@@ -392,13 +392,13 @@ class Client:
     async def request(
         self,
         topic: str,
-        data: bytes | None = None,
+        payload: bytes | None = None,
         *,
         context: RequestContext | None = None,
     ) -> Response:
-        """Publish a packet and wait for the response.
+        """Publish ``payload`` and wait for the response.
 
-        The packet is sent to the broker and then subsequently to any
+        The payload is sent to the broker and then subsequently to any
         clients subscribing to matching topics. Responses to the
         request are expected to be published by the responding client
         on the topic specified by the ``response_topic`` attribute of
@@ -407,10 +407,10 @@ class Client:
         Parameters
         ----------
         topic
-            The topic that the packet should be published on.
-        data
-            The data to send.
-            If ``None``, an empty value is published.
+            The topic that ``payload`` should be published on.
+        payload
+            The payload to send.
+            If ``None``, an empty payload is published.
         context
             Context for the request operation.
 
@@ -430,7 +430,7 @@ class Client:
         self._pending_responses[cid] = response_future
 
         try:
-            await self.publish(topic, data, context=context)
+            await self.publish(topic, payload, context=context)
             response_message = await response_future
             return Response.from_message(response_message)
         finally:
@@ -439,11 +439,11 @@ class Client:
     async def stream(
         self,
         topic: str,
-        data: bytes | None = None,
+        payload: bytes | None = None,
         *,
         context: StreamContext | None = None,
     ) -> AsyncIterator[Response]:
-        """Publish a packet and stream the response.
+        """Publish ``payload`` and stream the response.
 
         The stream ends when the responding client sends an empty
         response (``None``).
@@ -451,10 +451,10 @@ class Client:
         Parameters
         ----------
         topic
-            The topic that the packet should be published on.
-        data
-            The data to send.
-            If ``None``, an empty value is published.
+            The topic that ``payload`` should be published on.
+        payload
+            The payload to send.
+            If ``None``, an empty payload is published.
         context
             Context for the stream operation.
 
@@ -474,11 +474,11 @@ class Client:
         self._pending_responses_queue[cid] = response_queue
 
         try:
-            await self.publish(topic, data, context=context)
+            await self.publish(topic, payload, context=context)
             while True:
                 response_message = await response_queue.get()
                 response = Response.from_message(response_message)
-                if not response.data:
+                if not response.payload:
                     break
 
                 yield response
@@ -695,14 +695,14 @@ class Response:
 
     Parameters
     ----------
-    data
-        The data contained in the response.
+    payload
+        The payload contained in the response.
     status_code
         The status code of the response, where a value of 0 indicates a
         successful operation and any non-zero value indicates an error.
     """
 
-    data: bytes
+    payload: bytes
 
     _: dataclasses.KW_ONLY
     status_code: int = STATUS_CODE_SUCCESS
@@ -726,4 +726,4 @@ class Response:
         except AttributeError:
             status_code = STATUS_CODE_SUCCESS
 
-        return cls(data=message.payload, status_code=status_code)
+        return cls(payload=message.payload, status_code=status_code)

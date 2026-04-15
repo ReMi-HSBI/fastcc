@@ -31,3 +31,6 @@ MULTI_LEVEL_WILDCARD: typing.Final[str] = "#"
 
 SINGLE_LEVEL_WILDCARD: typing.Final[str] = "+"
 """Single-level wildcard character used in MQTT topic patterns."""
+
+WILDCARD_PARAMETER_NAME: typing.Final[str] = "wildcard"
+"""Name of the parameter used to inject wildcard values in handler functions."""

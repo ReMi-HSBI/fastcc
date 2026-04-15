@@ -1,5 +1,6 @@
 import asyncio
 import dataclasses
+import inspect
 import logging
 import re
 import typing
@@ -22,6 +23,7 @@ from fastcc.constants import (
     STATUS_CODE_FAILURE,
     STATUS_CODE_SUCCESS,
     TOPIC_SEPARATOR,
+    WILDCARD_PARAMETER_NAME,
 )
 from fastcc.qos import QoS
 
@@ -61,27 +63,34 @@ class Route:
     handler: Routable
     topic: str = dataclasses.field(init=False)
     regex: re.Pattern = dataclasses.field(init=False)
+    injectors: frozenset[str] = dataclasses.field(init=False)
 
     def __post_init__(self, pattern: str) -> None:
         validate_pattern(pattern)
+        validate_handler(self.handler, pattern)
         object.__setattr__(self, "topic", pattern_to_topic(pattern))
         object.__setattr__(self, "regex", compile_pattern(pattern))
+        object.__setattr__(
+            self,
+            "injectors",
+            extract_injectors(self.handler, pattern),
+        )
 
     async def __call__(
         self,
-        data: bytes,
-        **path_parameters: str,
+        payload: bytes,
+        **kwargs: typing.Any,
     ) -> bytes | None:
-        """Invoke the route's handler with the given data.
+        """Invoke the route's handler with the given payload.
 
         Parameters
         ----------
-        data
-            The payload data to pass to the handler function.
-        path_parameters
+        payload
+            The payload to pass to the handler function.
+        kwargs
             Path parameters extracted from the topic, where keys are
             parameter names and values are the corresponding values
-            from the topic.
+            from the topic plus possible injector values.
 
         Returns
         -------
@@ -89,7 +98,7 @@ class Route:
             The result returned by the handler function, or ``None`` if
             the handler does not return a value.
         """
-        return await self.handler(data, **path_parameters)
+        return await self.handler(payload, **kwargs)
 
     def match(self, topic: str) -> re.Match[str] | None:
         """Match a given topic against this route's pattern.
@@ -134,6 +143,7 @@ class Router:
     def __init__(self, prefix: str = "") -> None:
         self._prefix = prefix.rstrip(TOPIC_SEPARATOR)
         self._routes: set[Route] = set()
+        self._injectors: dict[str, typing.Any] = {}
 
     @property
     def routes(self) -> set[Route]:
@@ -202,6 +212,8 @@ class Router:
             The MQTT client to use for subscribing and receiving
             messages.
         """
+        validate_injectors(self._injectors, self._routes)
+
         for route in self._routes:
             await client.subscribe(route.topic)
 
@@ -214,16 +226,27 @@ class Router:
         finally:
             await asyncio.gather(*tasks, return_exceptions=True)
 
+    def add_injectors(self, **injectors: typing.Any) -> None:
+        """Add injectors to the router.
+
+        Injectors are values that can be injected into route handlers as
+        additional keyword arguments. This method allows adding multiple
+        injectors at once.
+
+        Parameters
+        ----------
+        **injectors
+            Key-value pairs where keys are injector names and values are
+            the corresponding injector values.
+        """
+        self._injectors.update(injectors)
+
     async def __handle_message(
         self,
         message: aiomqtt.Message,
         client: Client,
     ) -> None:
         topic = message.topic.value
-
-        route, path_parameters = self.get(topic)
-        if route is None:
-            return
 
         response_topic = None
         correlation_id = None
@@ -235,14 +258,24 @@ class Router:
                 None,
             )
 
+        route, path_parameters = self.get(topic)
+        if route is None:
+            return
+
+        injectors = {
+            name: self._injectors.get(name) for name in route.injectors
+        }
+
         response_properties = paho_properties.Properties(
             paho_packettypes.PacketTypes.PUBLISH,
         )
         status_code = STATUS_CODE_SUCCESS
-
-        # TODO(jb): Injectors
         try:
-            result = await route(message.payload, **path_parameters)
+            result = await route(
+                message.payload,
+                **path_parameters,
+                **injectors,
+            )
         except Exception as exc:  # noqa: BLE001
             result = str(exc).encode()
             status_code = (
@@ -351,6 +384,78 @@ def validate_pattern(pattern: str) -> None:
                 raise ValueError(error_message)
 
 
+def validate_handler(handler: Routable, pattern: str) -> None:
+    """Validate a route handler function for correctness.
+
+    This function checks that the given handler is an asynchronous
+    callable and that its parameters are compatible with the path
+    parameters defined in the topic pattern.
+
+    Parameters
+    ----------
+    handler
+        The route handler function to validate.
+    pattern
+        The MQTT topic pattern associated with the handler, used to
+        extract expected path parameter names.
+
+    Raises
+    ------
+    ValueError
+        If the handler is invalid or incompatible with the topic pattern.
+    """
+    if not inspect.iscoroutinefunction(handler):
+        error_message = (
+            f"Invalid route handler: Handler functions must be "
+            f"asynchronous (handler: {handler})."
+        )
+        raise ValueError(error_message)
+
+    signature = inspect.signature(handler)
+    positional_params = [
+        p
+        for p in signature.parameters.values()
+        if p.kind
+        in {
+            inspect.Parameter.POSITIONAL_ONLY,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        }
+    ]
+    if len(positional_params) != 1:
+        error_message = (
+            f"Invalid route handler: {handler} must have exactly "
+            f"one positional argument (the payload parameter)."
+        )
+        raise ValueError(error_message)
+
+    if positional_params:
+        payload_param = positional_params[0]
+        if payload_param.annotation is not bytes:
+            error_message = (
+                f"Invalid route handler: {handler} must have a payload "
+                f"parameter of type `bytes`."
+            )
+            raise ValueError(error_message)
+
+    keyword_only_params = {
+        p.name
+        for p in signature.parameters.values()
+        if p.kind == inspect.Parameter.KEYWORD_ONLY
+    }
+    path_parameters: set[str] = set(re.findall(PATH_PARAMETER_PATTERN, pattern))
+    if MULTI_LEVEL_WILDCARD in pattern:
+        path_parameters.add(WILDCARD_PARAMETER_NAME)
+
+    missing = path_parameters - keyword_only_params
+    if missing:
+        error_message = (
+            f"Invalid route handler: {handler} is missing "
+            f"path-parameters that are defined in topic pattern "
+            f"{pattern}: {missing}"
+        )
+        raise ValueError(error_message)
+
+
 def compile_pattern(pattern: str) -> re.Pattern:
     """Compile a topic pattern string into a regular expression.
 
@@ -374,7 +479,10 @@ def compile_pattern(pattern: str) -> re.Pattern:
     pattern = re.sub(PATH_PARAMETER_PATTERN, r"(?P<\1>[^/]+)", pattern)
 
     # Replace multi-level wildcard with regex equivalent
-    pattern = pattern.replace(MULTI_LEVEL_WILDCARD, r"(?P<wildcard>.*)")
+    pattern = pattern.replace(
+        MULTI_LEVEL_WILDCARD,
+        rf"(?P<{WILDCARD_PARAMETER_NAME}>.*)",
+    )
 
     return re.compile(pattern)
 
@@ -398,3 +506,73 @@ def pattern_to_topic(pattern: str) -> str:
         A concrete MQTT topic with path parameters replaced by ``+``.
     """
     return re.sub(PATH_PARAMETER_PATTERN, SINGLE_LEVEL_WILDCARD, pattern)
+
+
+def extract_injectors(handler: Routable, pattern: str) -> frozenset[str]:
+    """Extract injector names from a handler based on the topic pattern.
+
+    This function identifies which parameters of the handler function
+    are injectors by comparing the handler's parameters with the path
+    parameters defined in the topic pattern. Any keyword parameter
+    that is not a path parameter is considered an injector.
+
+    Parameters
+    ----------
+    handler
+        The route handler function to analyze.
+    pattern
+        The MQTT topic pattern associated with the handler, used to
+        extract expected path parameter names.
+
+    Returns
+    -------
+    set[str]
+        A set of injector names that are expected by the handler.
+    """
+    signature = inspect.signature(handler)
+    keyword_only_params = {
+        p.name
+        for p in signature.parameters.values()
+        if p.kind == inspect.Parameter.KEYWORD_ONLY
+    }
+    path_parameters: set[str] = set(re.findall(PATH_PARAMETER_PATTERN, pattern))
+    if MULTI_LEVEL_WILDCARD in pattern:
+        path_parameters.add(WILDCARD_PARAMETER_NAME)
+
+    return frozenset(keyword_only_params - path_parameters)
+
+
+def validate_injectors(
+    injectors: dict[str, typing.Any],
+    routes: set[Route],
+) -> None:
+    """Validate that all injectors required by routes are provided.
+
+    This function checks that for every injector name specified in any
+    route's ``injectors`` set, there is a corresponding entry in the
+    provided injectors dictionary.
+
+    Parameters
+    ----------
+    injectors
+        A dictionary of available injectors, where keys are injector
+        names and values are the corresponding injector values.
+    routes
+        The set of registered routes to validate against.
+
+    Raises
+    ------
+    ValueError
+        If any route requires an injector that is not provided.
+    """
+    required_injectors: set[str] = set()
+    for route in routes:
+        required_injectors.update(route.injectors)
+
+    missing = required_injectors - injectors.keys()
+    if missing:
+        error_message = (
+            f"Missing injectors: The following injectors are required "
+            f"by registered routes but were not provided: {missing}"
+        )
+        raise ValueError(error_message)

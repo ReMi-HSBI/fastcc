@@ -26,14 +26,18 @@ from fastcc.client import (
     SubscribeContext,
     UnsubscribeContext,
 )
+from fastcc.exceptions import FastCCError, MqttConnectionError, RequestError
 from fastcc.qos import QoS
 from fastcc.router import Router
 
 __all__ = [
     "Client",
+    "FastCCError",
+    "MqttConnectionError",
     "PublishContext",
     "QoS",
     "RequestContext",
+    "RequestError",
     "Router",
     "StreamContext",
     "SubscribeContext",

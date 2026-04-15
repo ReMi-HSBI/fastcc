@@ -12,3 +12,11 @@ class MqttConnectionError(FastCCError):
         super().__init__(f"Failed to connect to MQTT broker on '{host}:{port}'")
         self.host = host
         self.port = port
+
+
+class RequestError(FastCCError):
+    """Raised when an MQTT request fails."""
+
+    def __init__(self, message: str, *, status_code: int) -> None:
+        super().__init__(message)
+        self.status_code = status_code
