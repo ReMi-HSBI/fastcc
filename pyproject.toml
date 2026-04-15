@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fastcc"
-version = "1.0.0"
+version = "2026.4.15"
 description = """\
     Lightweight, efficient and developer-friendly framework for MQTT \
     communication.
@@ -15,7 +15,7 @@ authors = [{ name = "J. Baudisch", email = "justin.baudisch@hsbi.de" }]
 maintainers = [{ name = "J. Baudisch", email = "justin.baudisch@hsbi.de" }]
 keywords = ["mqtt", "iot", "aiomqtt", "asyncio"]
 classifiers = [
-    "Development Status :: 1 - Planning",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Topic :: Software Development",
     "Topic :: Communications",
