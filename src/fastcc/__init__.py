@@ -8,13 +8,11 @@ with the following functionalities:
 +----------------------------------+---------------+
 | Feature                          | Status        |
 +==================================+===============+
-| Request/Response                 | 📋 Planned    |
+| Request/Response                 | ✅ Done       |
 +----------------------------------+---------------+
-| Streaming                        | 📋 Planned    |
+| Streaming                        | ✅ Done       |
 +----------------------------------+---------------+
-| Custom payload encoding/decoding | 📋 Planned    |
-+----------------------------------+---------------+
-| Routing                          | 📋 Planned    |
+| Routing                          | ✅ Done       |
 +----------------------------------+---------------+
 """
 
