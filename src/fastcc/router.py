@@ -58,22 +58,19 @@ class Route:
         topics of incoming messages against this route.
     """
 
-    pattern: dataclasses.InitVar[str]
-
+    pattern: str
     handler: Routable
-    topic: str = dataclasses.field(init=False)
     regex: re.Pattern = dataclasses.field(init=False)
     injectors: frozenset[str] = dataclasses.field(init=False)
 
-    def __post_init__(self, pattern: str) -> None:
-        validate_pattern(pattern)
-        validate_handler(self.handler, pattern)
-        object.__setattr__(self, "topic", pattern_to_topic(pattern))
-        object.__setattr__(self, "regex", compile_pattern(pattern))
+    def __post_init__(self) -> None:
+        validate_pattern(self.pattern)
+        validate_handler(self.handler, self.pattern)
+        object.__setattr__(self, "regex", compile_pattern(self.pattern))
         object.__setattr__(
             self,
             "injectors",
-            extract_injectors(self.handler, pattern),
+            extract_injectors(self.handler, self.pattern),
         )
 
     async def __call__(
@@ -215,7 +212,8 @@ class Router:
         validate_injectors(self._injectors, self._routes)
 
         for route in self._routes:
-            await client.subscribe(route.topic)
+            topic = pattern_to_topic(route.pattern)
+            await client.subscribe(topic)
 
         tasks: set[asyncio.Task[bytes | None]] = set()
         try:
@@ -240,6 +238,21 @@ class Router:
             the corresponding injector values.
         """
         self._injectors.update(injectors)
+
+    def add_router(self, router: Router) -> None:
+        """Add routes from another router into this router.
+
+        This method allows composing routers hierarchically by adding
+        all routes from another router into this one. The added router's
+        prefix will be preserved.
+
+        Parameters
+        ----------
+        router
+            The other router whose routes should be added to this router.
+        """
+        for route in router.routes:
+            self.route(route.pattern)(route.handler)
 
     async def __handle_message(
         self,
