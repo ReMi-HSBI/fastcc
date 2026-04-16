@@ -4,15 +4,13 @@ import inspect
 import logging
 import re
 import typing
+from collections.abc import Awaitable, Callable
 
 if typing.TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable
-
     import aiomqtt
 
     from fastcc.client import Client
 
-    type Routable = Callable[..., Awaitable[bytes | None]]
 
 import paho.mqtt.packettypes as paho_packettypes
 import paho.mqtt.properties as paho_properties
@@ -30,6 +28,7 @@ from fastcc.constants import (
 from fastcc.qos import QoS
 
 _logger = logging.getLogger(__name__)
+type Routable = Callable[..., Awaitable[bytes | None]]
 
 
 @dataclasses.dataclass(frozen=True, match_args=False, slots=True)

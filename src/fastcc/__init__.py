@@ -24,11 +24,14 @@ from fastcc.client import (
     SubscribeContext,
     UnsubscribeContext,
 )
+from fastcc.constants import STATUS_CODE_FAILURE, STATUS_CODE_SUCCESS
 from fastcc.exceptions import FastCCError, MqttConnectionError, RequestError
 from fastcc.qos import QoS
-from fastcc.router import Router
+from fastcc.router import Routable, Router
 
 __all__ = [
+    "STATUS_CODE_FAILURE",
+    "STATUS_CODE_SUCCESS",
     "Client",
     "FastCCError",
     "MqttConnectionError",
@@ -36,6 +39,7 @@ __all__ = [
     "QoS",
     "RequestContext",
     "RequestError",
+    "Routable",
     "Router",
     "StreamContext",
     "SubscribeContext",
