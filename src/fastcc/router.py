@@ -15,7 +15,7 @@ if typing.TYPE_CHECKING:
 import paho.mqtt.packettypes as paho_packettypes
 import paho.mqtt.properties as paho_properties
 
-from fastcc.client import PublishContext
+from fastcc.client import PublishContext, SubscribeContext
 from fastcc.constants import (
     MULTI_LEVEL_WILDCARD,
     PATH_PARAMETER_PATTERN,
@@ -44,21 +44,27 @@ class Route:
     pattern
         The MQTT topic pattern for this route, which may include path
         parameters and a multi-level wildcard.
+    context
+        The subscription context to use for this route.
     handler
         The asynchronous function that will be called when a message is
         published to a topic matching ``pattern``.
 
     Attributes
     ----------
-    topic
-        The concrete (subscribable) MQTT topic for this route.
     regex
         The compiled regular expression pattern used for matching
         topics of incoming messages against this route.
+    injectors
+        The set of injector names that are expected by the handler
+        function, which are determined based on the handler's
+        parameters.
     """
 
     pattern: str
     handler: Routable
+    context: SubscribeContext | None = None
+
     regex: re.Pattern = dataclasses.field(init=False)
     injectors: frozenset[str] = dataclasses.field(init=False)
 
@@ -165,13 +171,20 @@ class Router:
                 return route, match.groupdict()
         return None, {}
 
-    def route(self, pattern: str) -> Callable[[Routable], Routable]:
+    def route(
+        self,
+        pattern: str,
+        *,
+        context: SubscribeContext | None = None,
+    ) -> Callable[[Routable], Routable]:
         """Register a route handler for a given topic pattern.
 
         Parameters
         ----------
         pattern
             The MQTT topic pattern for the route.
+        context
+            The context to use for this route.
 
         Returns
         -------
@@ -189,7 +202,7 @@ class Router:
             else:
                 full_pattern = pattern
 
-            self._routes.add(Route(full_pattern, func))
+            self._routes.add(Route(full_pattern, func, context=context))
             _logger.debug("Registered route: %s -> %s", full_pattern, func)
             return func
 
@@ -212,7 +225,7 @@ class Router:
 
         for route in self._routes:
             topic = pattern_to_topic(route.pattern)
-            await client.subscribe(topic)
+            await client.subscribe(topic, context=route.context)
 
         tasks: set[asyncio.Task[bytes | None]] = set()
         try:
@@ -251,7 +264,7 @@ class Router:
             The other router whose routes should be added to this router.
         """
         for route in router.routes:
-            self.route(route.pattern)(route.handler)
+            self.route(route.pattern, context=route.context)(route.handler)
 
     async def __handle_message(
         self,
@@ -324,7 +337,6 @@ class Router:
             qos=QoS.AT_LEAST_ONCE,
         )
 
-        # TODO(jb): What if this publish fails?
         await client.publish(response_topic, result, context=context)
 
 

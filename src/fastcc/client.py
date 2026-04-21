@@ -657,11 +657,20 @@ class UnsubscribeContext(MessageContext):
 class RequestContext(PublishContext):
     """Context for a request operation."""
 
+    qos: QoS = QoS.AT_LEAST_ONCE
+
     def __post_init__(
         self,
         _properties: paho_properties.Properties | None,
     ) -> None:
         super().__post_init__(_properties)
+
+        if self.qos == QoS.AT_MOST_ONCE:
+            error_message = (
+                f"QoS level for a request operation cannot be "
+                f"{self.qos.value} ({self.qos.name})"
+            )
+            raise ValueError(error_message)
 
         if self.properties.packetType != paho_packettypes.PacketTypes.PUBLISH:
             error_message = (
