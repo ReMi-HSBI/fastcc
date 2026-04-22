@@ -12,3 +12,4 @@ convention = "numpy"
 
 [lint.extend-per-file-ignores]
 "docs/src/conf.py" = ["INP001"]
+"src/fastcc/codecs.py" = ["PLR6301", "D102"]

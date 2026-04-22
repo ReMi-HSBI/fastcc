@@ -12,21 +12,24 @@ if typing.TYPE_CHECKING:
     import types
     from collections.abc import AsyncIterator
 
+    from fastcc.codec_registry import CodecRegistry
+
 import aiomqtt
 import paho.mqtt.packettypes as paho_packettypes
 import paho.mqtt.properties as paho_properties
 import paho.mqtt.subscribeoptions as paho_subscribeoptions
 
+from fastcc.codec_registry import default_codec_registry
 from fastcc.constants import (
     DEFAULT_MQTT_HOST,
     DEFAULT_MQTT_PORT,
     DEFAULT_RESPONSE_TOPIC,
-    STATUS_CODE_SUCCESS,
     TOPIC_SEPARATOR,
 )
 from fastcc.exceptions import FastCCError, MqttConnectionError
 from fastcc.qos import QoS
-from fastcc.utilities import get_correlation_id, get_status_code
+from fastcc.response import Response
+from fastcc.utilities import get_correlation_id
 
 _logger = logging.getLogger(__name__)
 
@@ -49,6 +52,9 @@ class Client:
         The topic to listen for responses in request/response
         communication. The client id is automatically appended to the
         end of the topic to ensure uniqueness.
+    codec_registry
+        The codec registry to use for encoding and decoding messages.
+        If ``None``, the default codec registry is used.
     **kwargs
         Additional keyword arguments are passed directly to the
         underlying ``aiomqtt.Client`` instance.
@@ -66,10 +72,16 @@ class Client:
         port: int = DEFAULT_MQTT_PORT,
         *,
         response_topic: str = DEFAULT_RESPONSE_TOPIC,
+        codec_registry: CodecRegistry | None = None,
         **kwargs: typing.Any,
     ) -> None:
         self._host = host
         self._port = port
+
+        if codec_registry is None:
+            codec_registry = default_codec_registry
+
+        self._codec_registry = codec_registry
 
         # Ensure a unique client id is used (if none is provided)
         client_id = kwargs.get("identifier")
@@ -117,6 +129,11 @@ class Client:
     def port(self) -> int:
         """Port number the client is or will be connected to."""
         return self._port
+
+    @property
+    def codec_registry(self) -> CodecRegistry:
+        """The codec registry used for encoding and decoding messages."""
+        return self._codec_registry
 
     async def connect(self) -> None:
         """Connect to the MQTT broker.
@@ -260,22 +277,23 @@ class Client:
     async def publish(
         self,
         topic: str,
-        payload: bytes | None = None,
+        value: typing.Any = None,
         *,
         context: PublishContext | None = None,
     ) -> None:
-        """Publish ``payload`` to the given ``topic``.
+        """Publish ``value`` to the given ``topic``.
 
-        The payload is sent to the broker and then subsequently to any
+        The value is sent to the broker and then subsequently to any
         clients subscribing to matching topics.
 
         Parameters
         ----------
         topic
-            The topic ``payload`` should be published on.
-        payload
-            The payload to send.
-            If ``None``, an empty payload is published.
+            The topic ``value`` should be published on.
+        value
+            The value to send. If ``None``, an empty payload is
+            published. The value is tried to be converted by one of the
+            registered codecs.
         context
             Context for the publish operation.
 
@@ -284,6 +302,8 @@ class Client:
         FastCCError
             If the publish operation fails.
         """
+        payload = self._codec_registry.encode(value)
+
         if context is None:
             context = PublishContext()
 
@@ -389,16 +409,17 @@ class Client:
 
         _logger.debug("Unsubscribed from topic '%s'", topic)
 
-    async def request(
+    async def request[T](
         self,
         topic: str,
-        payload: bytes | None = None,
+        value: typing.Any = None,
         *,
+        response_type: type[T],
         context: RequestContext | None = None,
-    ) -> Response:
-        """Publish ``payload`` and wait for the response.
+    ) -> Response[T]:
+        """Publish ``value`` and wait for the response.
 
-        The payload is sent to the broker and then subsequently to any
+        The value is sent to the broker and then subsequently to any
         clients subscribing to matching topics. Responses to the
         request are expected to be published by the responding client
         on the topic specified by the ``response_topic`` attribute of
@@ -407,16 +428,19 @@ class Client:
         Parameters
         ----------
         topic
-            The topic that ``payload`` should be published on.
-        payload
-            The payload to send.
-            If ``None``, an empty payload is published.
+            The topic that ``value`` should be published on.
+        value
+            The value to send. If ``None``, an empty payload is
+            published. The value is tried to be converted by one of the
+            registered codecs.
+        response_type
+            The type to parse the response payload into.
         context
             Context for the request operation.
 
         Returns
         -------
-        Response
+        Response[T]
             The response to the request.
         """
         if context is None:
@@ -430,37 +454,45 @@ class Client:
         self._pending_responses[cid] = response_future
 
         try:
-            await self.publish(topic, payload, context=context)
+            await self.publish(topic, value, context=context)
             response_message = await response_future
-            return Response.from_message(response_message)
+            return Response.from_message(
+                response_message,
+                response_type,
+                codec_registry=self._codec_registry,
+            )
         finally:
             del self._pending_responses[cid]
 
-    async def stream(
+    async def stream[T](
         self,
         topic: str,
-        payload: bytes | None = None,
+        value: typing.Any = None,
         *,
-        context: StreamContext | None = None,
-    ) -> AsyncIterator[Response]:
-        """Publish ``payload`` and stream the response.
+        response_type: type[T],
+        context: RequestContext | None = None,
+    ) -> AsyncIterator[Response[T]]:
+        """Publish ``value`` and stream the response.
 
         The stream ends when the responding client sends an empty
-        response (``None``).
+        response.
 
         Parameters
         ----------
         topic
-            The topic that ``payload`` should be published on.
-        payload
-            The payload to send.
-            If ``None``, an empty payload is published.
+            The topic that ``value`` should be published on.
+        value
+            The value to send. If ``None``, an empty payload is
+            published. The value is tried to be converted by one of the
+            registered codecs.
+        response_type
+            The type to parse the response payload into.
         context
-            Context for the stream operation.
+            Context for the request operation.
 
         Yields
         ------
-        Response
+        Response[T]
             One response of the stream.
         """
         if context is None:
@@ -474,14 +506,17 @@ class Client:
         self._pending_responses_queue[cid] = response_queue
 
         try:
-            await self.publish(topic, payload, context=context)
+            await self.publish(topic, value, context=context)
             while True:
                 response_message = await response_queue.get()
-                response = Response.from_message(response_message)
-                if not response.payload:
+                if response_message.payload == b"":
                     break
 
-                yield response
+                yield Response.from_message(
+                    response_message,
+                    response_type,
+                    codec_registry=self._codec_registry,
+                )
         finally:
             del self._pending_responses_queue[cid]
 
@@ -696,43 +731,3 @@ class RequestContext(PublishContext):
 @dataclasses.dataclass(eq=False, match_args=False, kw_only=True, slots=True)
 class StreamContext(RequestContext):
     """Context for a stream operation."""
-
-
-@dataclasses.dataclass(eq=False, match_args=False, kw_only=True, slots=True)
-class Response:
-    """Response to a request.
-
-    Parameters
-    ----------
-    payload
-        The payload contained in the response.
-    status_code
-        The status code of the response, where a value of 0 indicates a
-        successful operation and any non-zero value indicates an error.
-    """
-
-    payload: bytes
-
-    _: dataclasses.KW_ONLY
-    status_code: int = STATUS_CODE_SUCCESS
-
-    @classmethod
-    def from_message(cls, message: aiomqtt.Message) -> Response:
-        """Create a response from an MQTT message.
-
-        Parameters
-        ----------
-        message
-            The MQTT message to create the response from.
-
-        Returns
-        -------
-        Response
-            The response created from the MQTT message.
-        """
-        try:
-            status_code = get_status_code(message)
-        except AttributeError:
-            status_code = STATUS_CODE_SUCCESS
-
-        return cls(payload=message.payload, status_code=status_code)
