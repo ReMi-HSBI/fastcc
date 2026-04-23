@@ -14,6 +14,8 @@ with the following functionalities:
 +----------------------------------+---------------+
 | Routing                          | ✅ Done       |
 +----------------------------------+---------------+
+| Custom encoding/decoding         | ✅ Done       |
++----------------------------------+---------------+
 """
 
 from fastcc.client import (
