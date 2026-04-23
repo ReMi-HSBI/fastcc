@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fastcc"
-version = "2026.4.21"
+version = "2026.4.23"
 description = """\
     Lightweight, efficient and developer-friendly framework for MQTT \
     communication.
