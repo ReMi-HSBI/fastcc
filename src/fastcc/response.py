@@ -7,6 +7,7 @@ if typing.TYPE_CHECKING:
     from fastcc.codec_registry import CodecRegistry
 
 from fastcc.constants import STATUS_CODE_SUCCESS
+from fastcc.exceptions import RequestError
 from fastcc.utilities import get_status_code
 
 
@@ -68,3 +69,19 @@ class Response[T]:
             codec_type=codec_type,
         )
         return cls(value=value, status_code=status_code)
+
+    def raise_for_status(self) -> None:
+        """Raise an exception if the response indicates an error.
+
+        Raises
+        ------
+        RequestError
+            If the response indicates an error.
+        """
+        if self.status_code != STATUS_CODE_SUCCESS:
+            error_message = (
+                self.value
+                if isinstance(self.value, str)
+                else f"Failed with status code {self.status_code}"
+            )
+            raise RequestError(error_message, status_code=self.status_code)

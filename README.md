@@ -37,3 +37,14 @@ root-directory of the project.
 > Ensure that your virtual environment is activated and that the
 > development extras are installed, as they include the docstring
 > tooling required to build the API documentation.
+
+### Code Style
+
+To enforce a consistent code style, this project uses
+[ruff](https://github.com/astral-sh/ruff) and [mypy](https://github.com/python/mypy).
+
+### Commit Message
+
+To ensure consistent and expressive commit messages, this project uses
+[gitmoji](https://github.com/carloscuesta/gitmoji) combined in a
+`git-commit` skill for generative AI.
