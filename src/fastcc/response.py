@@ -11,7 +11,7 @@ from fastcc.exceptions import RequestError
 from fastcc.utilities import get_status_code
 
 
-@dataclasses.dataclass(eq=False, match_args=False, kw_only=True, slots=True)
+@dataclasses.dataclass(eq=False, match_args=False, slots=True)
 class Response[T]:
     """Response to a request.
 
@@ -57,11 +57,22 @@ class Response[T]:
         -------
         Response[T]
             The response created from the MQTT message.
+
+        Raises
+        ------
+        RequestError
+            If the status code in the message indicates an error.
         """
         try:
             status_code = get_status_code(message)
         except AttributeError:
             status_code = STATUS_CODE_SUCCESS
+
+        if status_code != STATUS_CODE_SUCCESS:
+            raise RequestError(
+                message.payload.decode(),
+                status_code=status_code,
+            )
 
         value = codec_registry.decode(
             message.payload,
@@ -69,19 +80,3 @@ class Response[T]:
             codec_type=codec_type,
         )
         return cls(value=value, status_code=status_code)
-
-    def raise_for_status(self) -> None:
-        """Raise an exception if the response indicates an error.
-
-        Raises
-        ------
-        RequestError
-            If the response indicates an error.
-        """
-        if self.status_code != STATUS_CODE_SUCCESS:
-            error_message = (
-                self.value
-                if isinstance(self.value, str)
-                else f"Failed with status code {self.status_code}"
-            )
-            raise RequestError(error_message, status_code=self.status_code)
