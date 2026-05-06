@@ -1,4 +1,5 @@
 import enum
+import types
 import typing
 
 from google.protobuf.message import Message
@@ -15,6 +16,9 @@ class CodecType(enum.IntEnum):
 
     PROTOBUF = 3
     """Codec for encoding and decoding protobuf messages."""
+
+    NONE = 4
+    """Codec for encoding and decoding `None`."""
 
 
 class Codec(typing.Protocol):
@@ -162,3 +166,23 @@ class ProtobufCodec:
     def decode[T](self, data: bytes, target_type: type[T]) -> T:
         assert self.can_decode(target_type)
         return target_type.FromString(data)  # type: ignore[attr-defined, no-any-return]
+
+
+class NoneCodec:
+    """Codec for encoding and decoding `None`."""
+
+    codec_type = CodecType.NONE.value
+
+    def can_encode(self, value: typing.Any) -> bool:
+        return value is None
+
+    def can_decode(self, target_type: type[typing.Any]) -> bool:
+        return target_type is types.NoneType
+
+    def encode(self, value: None) -> bytes:
+        assert self.can_encode(value)
+        return b""
+
+    def decode[T](self, _: bytes, target_type: type[T]) -> T:
+        assert self.can_decode(target_type)
+        return None  # type: ignore[return-value]

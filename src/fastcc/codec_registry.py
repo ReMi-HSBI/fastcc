@@ -3,7 +3,7 @@ import typing
 if typing.TYPE_CHECKING:
     from fastcc.codecs import Codec
 
-from fastcc.codecs import BytesCodec, ProtobufCodec, StringCodec
+from fastcc.codecs import BytesCodec, NoneCodec, ProtobufCodec, StringCodec
 from fastcc.exceptions import CodecError, CodecNotFoundError
 
 
@@ -160,6 +160,7 @@ def _build_default_registry() -> CodecRegistry:
     registry.register(BytesCodec())
     registry.register(StringCodec())
     registry.register(ProtobufCodec())
+    registry.register(NoneCodec())
     return registry
 
 
