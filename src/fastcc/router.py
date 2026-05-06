@@ -4,7 +4,7 @@ import re
 import typing
 
 if typing.TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import AsyncIterator, Awaitable, Callable
 
     import aiomqtt
 
@@ -182,38 +182,60 @@ class Router:
     ) -> None:
         topic = message.topic.value
 
-        response_topic = None
-        correlation_id = None
+        response_topic: str | None = None
+        correlation_data: bytes | None = None
         if message.properties is not None:
             response_topic = getattr(message.properties, "ResponseTopic", None)
-            correlation_id = getattr(
+            correlation_data = getattr(
                 message.properties,
                 "CorrelationData",
                 None,
             )
 
         route, path_parameters = self.get(topic)
+
+        # Ignore messages that don't match any route.
         if route is None:
+            return
+
+        # It doesn't make sense to have a streaming route if the
+        # client doesn't provide a response topic to send the
+        # stream to.
+        if route.is_async_iterator and response_topic is None:
             return
 
         injectors = {
             name: self._injectors.get(name) for name in route.injectors
         }
 
-        response_properties = paho_properties.Properties(
-            paho_packettypes.PacketTypes.PUBLISH,
-        )
-        status_code = STATUS_CODE_SUCCESS
         try:
             value = client.codec_registry.decode(
                 message.payload,
                 route.payload_type,
             )
-            result = await route(
-                value,
-                **path_parameters,
-                **injectors,
+
+            r = route.handler(value, **path_parameters, **injectors)
+            iterator: AsyncIterator[typing.Any] = (
+                r if route.is_async_iterator else _as_async_iter(r)  # type: ignore[assignment, arg-type]
             )
+
+            async for result in iterator:
+                await _send_response(
+                    client,
+                    response_topic,
+                    correlation_data,
+                    result,
+                )
+
+            if route.is_async_iterator:
+                # Send a final response to indicate the end of the stream.
+                await _send_response(
+                    client,
+                    response_topic,
+                    correlation_data,
+                    b"",
+                )
+
         except Exception as exc:  # noqa: BLE001
             result = str(exc).encode()
             status_code = (
@@ -221,36 +243,40 @@ class Router:
                 if hasattr(exc, "status_code")
                 else STATUS_CODE_FAILURE
             )
-
-        if response_topic is None:
-            if result is not None:
-                _logger.warning(
-                    "Handler returned a result but no response topic "
-                    "was provided in the message properties; result "
-                    "will be discarded (topic: %r)",
-                    topic,
-                )
-            return
-
-        if correlation_id is None:
-            _logger.warning(
-                "Malformed message: No correlation ID was provided in "
-                "the message properties; response will be discarded "
-                "(topic: %r)",
-                topic,
+            await _send_response(
+                client,
+                response_topic,
+                correlation_data,
+                result,
+                status_code=status_code,
             )
-            return
 
-        response_properties.CorrelationData = correlation_id
-        response_properties.UserProperty = [
-            ("status_code", str(status_code)),
-        ]
-        context = PublishContext(
-            _properties=response_properties,
-            qos=QoS.AT_LEAST_ONCE,
-        )
 
-        await client.publish(response_topic, result, context=context)
+async def _send_response(
+    client: Client,
+    response_topic: str | None,
+    correlation_data: bytes | None,
+    result: typing.Any,
+    status_code: int = STATUS_CODE_SUCCESS,
+) -> None:
+    if response_topic is None:
+        return
+
+    response_properties = paho_properties.Properties(
+        paho_packettypes.PacketTypes.PUBLISH,
+    )
+
+    if correlation_data is not None:
+        response_properties.CorrelationData = correlation_data
+
+    response_properties.UserProperty = [
+        ("status_code", str(status_code)),
+    ]
+    context = PublishContext(
+        _properties=response_properties,
+        qos=QoS.AT_LEAST_ONCE,
+    )
+    await client.publish(response_topic, result, context=context)
 
 
 def _pattern_to_topic(pattern: str) -> str:
@@ -272,3 +298,9 @@ def _validate_injectors(
             f"by registered routes but were not provided: {missing}"
         )
         raise ValueError(error_message)
+
+
+async def _as_async_iter(
+    coro: Awaitable[typing.Any],
+) -> AsyncIterator[typing.Any]:
+    yield await coro

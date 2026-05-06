@@ -2,7 +2,7 @@ import dataclasses
 import inspect
 import re
 import typing
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 
 if typing.TYPE_CHECKING:
     from fastcc.client import SubscribeContext
@@ -16,7 +16,10 @@ from fastcc.constants import (
 )
 from fastcc.exceptions import RouteValidationError
 
-type Routable = Callable[..., Awaitable[typing.Any]]
+type Routable = (
+    Callable[..., Awaitable[typing.Any]]
+    | Callable[..., AsyncIterator[typing.Any]]
+)
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -31,6 +34,7 @@ class Route:
     injectors: frozenset[str] = dataclasses.field(init=False)
     payload_type: type[typing.Any] = dataclasses.field(init=False)
     return_type: type[typing.Any] = dataclasses.field(init=False)
+    is_async_iterator: bool = dataclasses.field(init=False)
 
     def __post_init__(self) -> None:
         _validate_pattern(self.pattern)
@@ -52,30 +56,11 @@ class Route:
             "return_type",
             _extract_return_type(self.handler),
         )
-
-    async def __call__(
-        self,
-        value: typing.Any,
-        **kwargs: typing.Any,
-    ) -> typing.Any:
-        """Invoke the route's handler with the given payload.
-
-        Parameters
-        ----------
-        payload
-            The payload to pass to the handler function.
-        kwargs
-            Path parameters extracted from the topic, where keys are
-            parameter names and values are the corresponding values
-            from the topic plus possible injector values.
-
-        Returns
-        -------
-        bytes | None
-            The result returned by the handler function, or ``None`` if
-            the handler does not return a value.
-        """
-        return await self.handler(value, **kwargs)
+        object.__setattr__(
+            self,
+            "is_async_iterator",
+            inspect.isasyncgenfunction(self.handler),
+        )
 
     def match(self, topic: str) -> re.Match[str] | None:
         """Match a given topic against this route's pattern.
@@ -144,7 +129,9 @@ def _validate_pattern(pattern: str) -> None:
 
 
 def _validate_handler(handler: Routable, pattern: str) -> None:
-    if not inspect.iscoroutinefunction(handler):
+    is_async_function = inspect.iscoroutinefunction(handler)
+    is_async_generator = inspect.isasyncgenfunction(handler)
+    if not is_async_function and not is_async_generator:
         error_message = f"Route handler {handler!r} must be asynchronous"
         raise RouteValidationError(error_message)
 

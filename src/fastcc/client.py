@@ -236,6 +236,13 @@ class Client:
         await self.connect()
         self._listener = asyncio.create_task(self.__listen())
 
+        options = paho_subscribeoptions.SubscribeOptions(
+            qos=QoS.AT_LEAST_ONCE.value,
+            noLocal=True,
+        )
+        context = SubscribeContext(_options=options)
+        await self.subscribe(self._response_topic, context=context)
+
     async def stop(
         self,
         exc_type: type[BaseException] | None = None,
@@ -536,14 +543,8 @@ class Client:
             yield await self._messages.get()
 
     async def __listen(self) -> None:
-        options = paho_subscribeoptions.SubscribeOptions(
-            qos=QoS.AT_LEAST_ONCE.value,
-            noLocal=True,
-        )
-        context = SubscribeContext(_options=options)
-        await self.subscribe(self._response_topic, context=context)
+        _logger.info("Started listening")
         try:
-            _logger.info("Started listening")
             async for message in self._client.messages:
                 if message.topic.value != self._response_topic:
                     await self._messages.put(message)
